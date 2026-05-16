@@ -1,0 +1,2290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NFC Acoustic Environment Forecast</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --ink: #1f2933;
+      --muted: #5f6b76;
+      --line: #d9ddd8;
+      --accent: #2d6a4f;
+      --accent-2: #40916c;
+      --bad: #8a1f11;
+      --warn: #835c00;
+      --good: #1b6b38;
+      --shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101412;
+        --panel: #171d1a;
+        --ink: #edf2ef;
+        --muted: #aab5af;
+        --line: #2d3732;
+        --accent: #74c69d;
+        --accent-2: #95d5b2;
+        --bad: #ffb4a2;
+        --warn: #ffd166;
+        --good: #95d5b2;
+        --shadow: 0 10px 30px rgba(0,0,0,0.3);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.45;
+    }
+
+    header {
+      padding: 2rem 1rem 1rem;
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 .5rem;
+      font-size: clamp(1.9rem, 3vw, 3rem);
+      line-height: 1.05;
+    }
+
+    h2 { margin: 0 0 1rem; }
+    h3 { margin: .25rem 0 .75rem; }
+    p { margin: .5rem 0; }
+    .lede { max-width: 820px; color: var(--muted); font-size: 1.05rem; }
+
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 1rem;
+    }
+
+    .grid {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .controls {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      align-items: start;
+      margin-bottom: 1rem;
+    }
+
+    .timezone-field .muted {
+      margin: .45rem 0 0;
+      line-height: 1.35;
+    }
+
+    .foliage-controls {
+      display: grid;
+      grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+      gap: .75rem;
+      align-items: start;
+      margin-top: 1rem;
+    }
+
+    .foliage-controls .muted {
+      margin: 1.85rem 0 0;
+      line-height: 1.35;
+    }
+
+
+    a {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    @media (max-width: 700px) {
+      .foliage-controls { grid-template-columns: 1fr; }
+      .foliage-controls .muted { margin-top: .15rem; }
+    }
+
+    @media (max-width: 860px) {
+      .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 560px) {
+      .controls { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 1rem;
+      box-shadow: var(--shadow);
+    }
+
+    label {
+      display: block;
+      font-weight: 700;
+      margin-bottom: .35rem;
+    }
+
+    input, select, button {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: .75rem .8rem;
+      font: inherit;
+      background: color-mix(in srgb, var(--panel), var(--bg) 30%);
+      color: var(--ink);
+    }
+
+    button {
+      cursor: pointer;
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+      font-weight: 800;
+      transition: transform .08s ease, opacity .08s ease;
+    }
+
+    button:hover { opacity: .92; }
+    button:active { transform: translateY(1px); }
+    button.secondary {
+      background: transparent;
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    .actions {
+      display: flex;
+      gap: .75rem;
+      flex-wrap: wrap;
+    }
+    .actions > * { flex: 1 1 180px; }
+
+    .status {
+      color: var(--muted);
+      min-height: 1.5rem;
+      margin: .5rem 0 1rem;
+    }
+
+    .status.status-loading::after {
+      content: "";
+      display: inline-block;
+      width: 1.5em;
+      text-align: left;
+      animation: statusDots 1.2s steps(4, end) infinite;
+    }
+
+    @keyframes statusDots {
+      0% { content: ""; }
+      25% { content: "."; }
+      50% { content: ".."; }
+      75%, 100% { content: "..."; }
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      align-items: start;
+    }
+
+    @media (max-width: 940px) {
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 640px) {
+      .summary { grid-template-columns: 1fr; }
+    }
+
+    .summary-column {
+      display: grid;
+      gap: 1rem;
+      align-content: start;
+    }
+
+    .night-card {
+      display: grid;
+      gap: .6rem;
+      width: 100%;
+      margin: 0;
+      align-self: start;
+    }
+
+    .badge-row {
+      display: flex;
+      gap: .5rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: .25rem .65rem;
+      font-size: .85rem;
+      font-weight: 800;
+      background: color-mix(in srgb, var(--accent), transparent 84%);
+      color: var(--accent-2);
+      border: 1px solid color-mix(in srgb, var(--accent), transparent 60%);
+    }
+
+    .badge.observed, .observed-card .badge:first-child {
+      background: color-mix(in srgb, var(--muted), transparent 86%);
+      color: var(--ink);
+      border-color: color-mix(in srgb, var(--muted), transparent 45%);
+    }
+
+    .observed-card {
+      border-color: color-mix(in srgb, var(--muted), transparent 55%);
+    }
+
+    .location-resolved {
+      margin-top: .85rem;
+      color: var(--muted);
+    }
+
+    .section-block {
+      margin-top: 1rem;
+    }
+
+    .section-block[hidden] {
+      display: none;
+    }
+
+    .quality-excellent {
+      background: #1b6b38;
+      color: #ffffff;
+      border-color: #1b6b38;
+    }
+
+    .quality-very-good {
+      background: #dde7e3;
+      color: #1b6b38;
+      border-color: #abc3b9;
+    }
+
+    .quality-good {
+      background: #e8eddf;
+      color: #3f5f2f;
+      border-color: #b9c6a7;
+    }
+
+    .quality-fair {
+      background: #efe8dc;
+      color: #6d5428;
+      border-color: #d1c09f;
+    }
+
+    .quality-poor {
+      background: #eee1dc;
+      color: #74382f;
+      border-color: #d0aca1;
+    }
+
+    .quality-very-poor {
+      background: #e8dedf;
+      color: #652b32;
+      border-color: #c4a1a6;
+    }
+
+    .quality-unusable {
+      background: #dfd7d8;
+      color: #4d2026;
+      border-color: #aa8b90;
+    }
+
+    .score {
+      font-size: 2rem;
+      font-weight: 900;
+      letter-spacing: -.03em;
+    }
+
+    .muted { color: var(--muted); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .95rem;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: .55rem .4rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { color: var(--muted); font-size: .85rem; }
+
+    details {
+      border-top: 1px solid var(--line);
+      padding-top: .75rem;
+      margin-top: .75rem;
+    }
+
+    summary { cursor: pointer; font-weight: 800; color: var(--accent); }
+
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      background: color-mix(in srgb, var(--panel), var(--bg) 55%);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 1rem;
+      max-height: 620px;
+      overflow: auto;
+    }
+
+    .map-wrap {
+      margin-top: 1rem;
+    }
+
+    #locationMap {
+      height: 320px;
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .option-row {
+      display: flex;
+      gap: .65rem;
+      align-items: flex-start;
+      margin-top: 1rem;
+    }
+
+    .option-row input[type="checkbox"] {
+      width: auto;
+      margin-top: .25rem;
+      flex: 0 0 auto;
+    }
+
+    .option-row label {
+      margin-bottom: .15rem;
+    }
+
+
+    .footer-note {
+      color: var(--muted);
+      font-size: .9rem;
+      padding: 1rem 0 2rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>NFC acoustic environment forecast</h1>
+    <p class="lede">Score hourly weather data for sound clarity and propagation—the acoustic environment for nocturnal flight call recording.</p>
+    <p class="lede">It does not forecast bird activity or migration. Such forecasts are available from <a href="https://birdcast.org/migration-tools/migration-forecast-maps/" target="_blank" rel="noopener noreferrer">BirdCast</a>.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <div class="grid controls">
+        <div>
+          <label for="latitude">Latitude</label>
+          <input id="latitude" type="number" step="0.000001" value="42.4206345" />
+        </div>
+        <div>
+          <label for="longitude">Longitude</label>
+          <input id="longitude" type="number" step="0.000001" value="-71.1804986" />
+        </div>
+        <div class="timezone-field">
+          <label for="timezone">Timezone</label>
+          <input id="timezone" type="text" value="auto" aria-describedby="tzHelp" />
+          <p id="tzHelp" class="muted">Use <strong>auto</strong> or an IANA value such as America/New_York.</p>
+        </div>
+        <div>
+          <label for="forecastDays">Forecast nights</label>
+          <select id="forecastDays">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+          </select>
+        </div>
+      </div>
+      <div class="map-wrap">
+        <label for="locationMap">Map-selected location</label>
+        <div id="locationMap" role="application" aria-label="Click map to set latitude and longitude"></div>
+        <p class="muted">Click the map or drag the marker to select latitude and longitude. Requires an internet connection.</p>
+      </div>
+      <div class="foliage-controls">
+        <div>
+          <label for="foliageWeight">Foliage noise</label>
+          <select id="foliageWeight" aria-describedby="foliageHelp">
+            <option value="1.00">Minimal / open site</option>
+            <option value="1.15">Light / sparse trees</option>
+            <option value="1.35" selected>Moderate / leafed-out trees nearby</option>
+            <option value="1.60">Heavy / dense trees near mic</option>
+          </select>
+        </div>
+        <p id="foliageHelp" class="muted">Leafed-out trees can add rustle and intermittent broadband noise in wind, raising the noise floor and masking faint calls or fine spectrogram detail.</p>
+      </div>
+      <div class="foliage-controls">
+        <div>
+          <label for="insectNoise">Insect noise</label>
+          <select id="insectNoise" aria-describedby="insectHelp">
+            <option value="low" selected>Low / not noticeable</option>
+            <option value="moderate">Moderate / audible insects</option>
+            <option value="heavy">Heavy / dense insect chorus</option>
+          </select>
+        </div>
+        <p id="insectHelp" class="muted">Some insect sound bands and pulses can mask NFC structure on the spectrogram.</p>
+      </div>
+      <div class="option-row">
+        <input id="includeHumanNoise" type="checkbox" />
+        <div>
+          <label for="includeHumanNoise">Check human-made noise context</label>
+          <p class="muted">Not weighted in score. Estimates whether nearby major roads and runway corridors may carry traffic or aircraft noise in the direction of the recorder. May add 30+ seconds to forecast processing.</p>
+        </div>
+      </div>
+      <div class="actions" style="margin-top: 1rem;">
+        <button id="runBtn">Generate forecast</button>
+        <button class="secondary" id="downloadTxtBtn" disabled>Download TXT</button>
+        <button class="secondary" id="downloadJsonBtn" disabled>Download JSON</button>
+      </div>
+      <div id="locationResolved" class="location-resolved" aria-live="polite"></div>
+      <div id="status" class="status"></div>
+    </section>
+
+
+    <section id="forecastSection" class="section-block" aria-live="polite" hidden>
+      <h2>Forecasted acoustic environment</h2>
+      <div id="forecastSummary" class="grid summary"></div>
+    </section>
+
+    <section id="observedSection" class="section-block" aria-live="polite" hidden>
+      <h2>Observed acoustic environment</h2>
+      <div id="observedSummary" class="grid summary"></div>
+    </section>
+
+    <section id="detailSection" class="card" style="margin-top: 1rem; display: none;">
+      <h2>Plain-text report</h2>
+      <pre id="reportText"></pre>
+    </section>
+
+    <section class="footer-note" aria-label="Notes">
+      <h2>Notes</h2>
+      <ul>
+        <li><strong>Weather data:</strong> 10 m wind is from Open-Meteo. Near-ground wind is estimated from the same profile. Visibility uses API data when available; otherwise, it is estimated from precipitation and cloud cover.</li>
+        <li><strong>Night windows:</strong> Night windows use astronomical twilight from sunrise-sunset.org.</li>
+        <li><strong>Scoring:</strong> The weighted score emphasizes factors that can mask bird calls or reduce visible structure on the spectrogram, including wind noise, precipitation, humidity, visibility, atmospheric stability, foliage noise, and insect noise.</li>
+        <li><strong>Foliage:</strong> Foliage noise is set by the user. Use a higher setting when leafed-out trees are close to the recorder.</li>
+        <li><strong>Insects:</strong> Insect noise is included in the weighted score when selected because some insect bands and pulses can overlap nocturnal flight-call frequencies and mask NFC structure on the spectrogram.</li>
+        <li><strong>Human-made noise:</strong> Road and aircraft context is shown separately from the weighted score because actual source strength varies by traffic volume, flight activity, pavement conditions, and other factors the tool cannot directly measure.</li>
+        <li><strong>Road traffic:</strong> Road traffic is estimated from nearby OpenStreetMap roads tagged motorway, trunk, or primary; distance to the selected point; road class; wind direction; and that night’s calm, humid, stable conditions.</li>
+        <li><strong>Aircraft:</strong> Aircraft context is estimated from nearby mapped or built-in major airports and mapped runway alignment. It does not use live or scheduled flight data.</li>
+        <li><strong>“Could not check”:</strong> This means the lookup service failed, timed out, or returned incomplete data. It does not mean the site is quiet.</li>
+      </ul>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const MODEL_VERSION = "web-2.1.18-nocturnal-hours";
+
+    // ============================================================================
+    // CUSTOMIZATION: Acoustic environment scoring baselines
+    // ============================================================================
+    // Adjust these settings to match your recording season and local conditions.
+    // Defaults are tuned for fall/spring migration in temperate North America
+    // (roughly September–October and March–May). This calibration affects all
+    // factor thresholds and ensures that typical nights score around 6/10.
+    //
+    // SEASONAL_CONFIG:
+    //   - Temperature range (°C) defines your recording season. Temperatures
+    //     outside this range are penalized; the ideal center gets the highest score.
+    //   - Expected average conditions help calibrate what "moderate" means.
+    //   - Leaf-out and senescence dates enable foliage-noise adjustment: wind gets
+    //     weighted more heavily when leaves are present (summer) or drying (fall).
+    //     Leave as null to disable. Find dates via USDA Phenology Network or local
+    //     botanical records. Typical for Massachusetts: leaf-out ~May 10.
+
+    const SEASONAL_CONFIG = {
+      // Temperature range (°C) where recording normally occurs.
+      // Scores penalize significantly outside this range.
+      season_temp_min: 2,        // ~35°F; earliest spring or late fall
+      season_temp_max: 18,       // ~64°F; late spring or early fall
+      season_temp_ideal_center: 10, // ~50°F; peak sensitivity at this point
+
+      // Expected wind speed (m/s) for a typical night during your season.
+      // Used to calibrate baseline expectations. ~4.5 m/s ≈ 10 mph.
+      expected_avg_wind_mps: 4.5,
+
+      // Expected humidity (%) for your recording season.
+      // Coastal/humid regions: 70–75. Dry regions: 50–60.
+      expected_avg_humidity: 72,
+
+      // Cloud cover (%) that feels "normal" for the season.
+      // 50% = partly cloudy; typical for many regions.
+      expected_avg_cloud_cover: 50,
+
+      // Foliage noise is user-directed rather than date-calculated.
+      // The forecast is only three nights ahead, and the user generally knows
+      // whether leafed-out trees are close enough to the recorder to matter.
+      leaf_out_date: null,
+      foliage_wind_weight_multiplier: 1.35,
+      fall_senescence_date: null,
+      foliage_wind_weight_multiplier_fall: 1.35,
+    };
+
+    // Scoring weights: relative importance of each factor to overall score.
+    // Wind is dominant (masking is the primary problem). Precipitation scales
+    // dynamically (see getPrecipitationWeight). Temperatures are now season-aware.
+    const BASE_SCORING_WEIGHTS = {
+      "Surface Wind": 0.28,
+      "Precipitation": 0.20,  // dynamically increased for heavy rain
+      "Humidity": 0.14,
+      "Visibility": 0.12,
+      "Cloud Cover": 0.10,
+      "Pressure": 0.10,
+      "Temperature": 0.06,
+      "Insect Noise": 0.00, // user-selected site context; dynamic weight added below
+    };
+
+    // Dynamic precipitation weighting: heavier rain → higher weight
+    // Heavy rain can dominate conditions even if wind is calm.
+    // Thresholds (mm/hour): adjust based on your local definitions.
+    const PRECIPITATION_WEIGHT_RULES = [
+      { threshold_mm: 5.0, weight: 0.45 },   // heavy rain: dominant factor
+      { threshold_mm: 2.0, weight: 0.35 },   // moderate rain: serious
+      { threshold_mm: 0.5, weight: 0.25 },   // light rain: notable
+      { threshold_mm: 0.1, weight: 0.18 },   // drizzle: minor
+      // below 0.1 mm: use base weight (0.20)
+    ];
+
+    const weightRationale = {
+      "Surface Wind": "wind noise masks distant calls",
+      "Precipitation": "rain/sleet noise masks calls directly; also wind-in-wet-foliage",
+      "Humidity": "affects sound absorption, especially high frequencies",
+      "Visibility": "proxy for atmospheric clarity and haze",
+      "Cloud Cover": "influences sound confinement and scattering",
+      "Pressure": "indicator of atmospheric stability overnight",
+      "Temperature": "influences mixing, stability, and phase transitions",
+      "Insect Noise": "insect bands and pulses can overlap NFC frequencies and mask spectrogram structure",
+    };
+
+    const mainConcernHint = {
+      "Surface Wind": "wind noise masking",
+      "Precipitation": "rain noise masking",
+      "Humidity": "high-frequency absorption",
+      "Visibility": "atmospheric attenuation",
+      "Cloud Cover": "less favorable sound confinement",
+      "Pressure": "atmospheric instability may scatter distant calls",
+      "Temperature": "mixing and stability concerns",
+      "Insect Noise": "insect noise may mask NFC structure",
+    };
+
+    const referenceWindHeightM = 10.0;
+    const targetWindHeightM = 2.0;
+    const windShearExponent = 0.20;
+
+    let lastStructured = null;
+    let lastReport = "";
+    let lastBaseName = "NFC acoustic forecast";
+    let activeFoliageWindWeightMultiplier = SEASONAL_CONFIG.foliage_wind_weight_multiplier;
+    let activeInsectNoiseLevel = "low";
+
+    const els = {
+      lat: document.getElementById("latitude"),
+      lon: document.getElementById("longitude"),
+      tz: document.getElementById("timezone"),
+      forecastDays: document.getElementById("forecastDays"),
+      foliageWeight: document.getElementById("foliageWeight"),
+      insectNoise: document.getElementById("insectNoise"),
+      includeHumanNoise: document.getElementById("includeHumanNoise"),
+      locationMap: document.getElementById("locationMap"),
+      runBtn: document.getElementById("runBtn"),
+      downloadTxtBtn: document.getElementById("downloadTxtBtn"),
+      downloadJsonBtn: document.getElementById("downloadJsonBtn"),
+      status: document.getElementById("status"),
+      locationResolved: document.getElementById("locationResolved"),
+      forecastSection: document.getElementById("forecastSection"),
+      observedSection: document.getElementById("observedSection"),
+      forecastSummary: document.getElementById("forecastSummary"),
+      observedSummary: document.getElementById("observedSummary"),
+      detailSection: document.getElementById("detailSection"),
+      reportText: document.getElementById("reportText"),
+    };
+
+    function setStatus(message, loading = false) {
+      els.status.textContent = message;
+      els.status.classList.toggle("status-loading", Boolean(loading));
+    }
+
+    function pad2(n) { return String(n).padStart(2, "0"); }
+
+    function localIso(dt) {
+      return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}T${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
+    }
+
+    function dateIso(dt) {
+      return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+    }
+
+    function parseLocalDateTime(s) {
+      const [d, t] = s.split("T");
+      const [y, m, day] = d.split("-").map(Number);
+      const [hh, mm] = t.split(":").map(Number);
+      return new Date(y, m - 1, day, hh, mm || 0, 0, 0);
+    }
+
+    function addDays(dt, days) {
+      const d = new Date(dt);
+      d.setDate(d.getDate() + days);
+      return d;
+    }
+
+    function addHours(dt, hours) {
+      const d = new Date(dt);
+      d.setHours(d.getHours() + hours);
+      return d;
+    }
+
+    function floorHour(dt) {
+      const d = new Date(dt);
+      d.setMinutes(0, 0, 0);
+      return d;
+    }
+
+    function fmtDateTime(dt) {
+      return `${dateIso(dt)} ${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
+    }
+
+    function fmtTime(dt) {
+      return `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
+    }
+
+    function mpsToMph(mps) { return mps * 2.237; }
+    function metersToMiles(meters) { return meters * 0.000621371; }
+    function celsiusToFahrenheit(c) { return (c * 9 / 5) + 32; }
+    function mmToInches(mm) { return mm / 25.4; }
+    function roundToHalf(x) { return Math.round(x * 2) / 2; }
+    function score100To10(score) { return roundToHalf(score / 10); }
+    function formatScore10(score) {
+      const val = score100To10(score);
+      return Math.abs(val - 10) < 1e-9 ? "10/10" : `${val.toFixed(1)}/10`;
+    }
+
+    function pluralizeNightCount(count, descriptor) {
+      const n = Number(count) || 0;
+      return `${n} ${descriptor} ${n === 1 ? "night" : "nights"}`;
+    }
+
+    function tierFromScore(score) {
+      if (score >= 80) return 5;
+      if (score >= 70) return 4;
+      if (score >= 60) return 3;
+      if (score >= 50) return 2;
+      if (score >= 35) return 1;
+      return 0;
+    }
+
+    function qualityExpectation(score) {
+      if (score >= 80)
+        return "Excellent – Expect clean, clear audio with sharp call definition and strong detail across the frequency spectrum";
+      if (score >= 70)
+        return "Very Good – Expect clear audio with well-defined calls; minor clarity loss most likely in high-frequency detail, roughly above 6–8 kHz";
+      if (score >= 60)
+        return "Good – Expect calls to be identifiable, with some loss of fine detail, especially above about 5–6 kHz";
+      if (score >= 50)
+        return "Fair – Expect calls to remain present but noticeably blurred, with reduced high-frequency detail and weaker distant calls";
+      if (score >= 40)
+        return "Poor – Expect significant audio degradation; distant calls difficult to distinguish from background";
+      if (score >= 25)
+        return "Very Poor – Expect heavy degradation; only loud and nearby calls likely to remain clear";
+      return "Unusable – Expect audio dominated by noise; recording unlikely to yield usable data";
+    }
+
+    function qualityExpectationForContext(score, historical = false) {
+      const text = qualityExpectation(score);
+      return historical ? text.replace(/\bExpect\b/g, "Expected") : text;
+    }
+
+    function idExpectation(score, historical = false) {
+      if (!historical) {
+        if (score >= 80) {
+          return "No concerns. Narrow lines, band separation, and fine modulation should be preserved.";
+        } else if (score >= 70) {
+          return "Most IDs should be straightforward; check high bands and faint harmonics above about 6–8 kHz.";
+        } else if (score >= 60) {
+          return "Fine structure may blur and higher bands may be faint or incomplete.";
+        } else if (score >= 50) {
+          return "Double-banded calls may lose the upper band; faint high notes may merge into background noise.";
+        } else if (score >= 40) {
+          return "Weak calls may show only the strongest band or lack enough shape for species-level IDs.";
+        } else if (score >= 25) {
+          return "Only loud, nearby calls are likely to retain enough structure for confident IDs.";
+        }
+        return "Noise is likely to dominate the spectrogram; detections may not support reliable IDs.";
+      }
+
+      if (score >= 80) {
+        return "No concerns. Narrow lines, band separation, and fine modulation were likely preserved.";
+      } else if (score >= 70) {
+        return "Most IDs were likely straightforward; high bands and faint harmonics above about 6–8 kHz warrant checking.";
+      } else if (score >= 60) {
+        return "Fine structure may have blurred and higher bands may have been faint or incomplete.";
+      } else if (score >= 50) {
+        return "Double-banded calls may have lost the upper band; faint high notes may have merged into background noise.";
+      } else if (score >= 40) {
+        return "Weak calls may have shown only the strongest band or lacked enough shape for species-level IDs.";
+      } else if (score >= 25) {
+        return "Only loud, nearby calls were likely to retain enough structure for confident IDs.";
+      }
+      return "Noise likely dominated the spectrogram; detections may not have supported reliable IDs.";
+    }
+
+    function formatFactorList(factors) {
+      if (!factors.length) return "minor factors";
+      if (factors.length === 1) return factors[0];
+      if (factors.length === 2) return `${factors[0]} and ${factors[1]}`;
+      return `${factors.slice(0, -1).join(", ")}, and ${factors[factors.length - 1]}`;
+    }
+
+    function topLimitingFactors(factors, maxN = 2) {
+      const penalties = Object.keys(BASE_SCORING_WEIGHTS).map(name => {
+        const score = factors[name]?.[0] ?? 100;
+        return [name, (100 - score) * BASE_SCORING_WEIGHTS[name]];
+      }).sort((a, b) => b[1] - a[1]);
+      const positive = penalties.filter(([, p]) => p > 0.1).map(([f]) => f);
+      return (positive.length ? positive : penalties.map(([f]) => f)).slice(0, maxN);
+    }
+
+    function recommendationLinesFromScoreAndFactors(overall, factors, historical = false) {
+      const tier = tierFromScore(overall);
+      const limiting2 = topLimitingFactors(factors, 2);
+      const expectation = qualityExpectationForContext(overall, historical);
+      let text;
+      if (tier === 5)
+        text = expectation;
+      else if (tier === 4)
+        text = expectation;
+      else if (tier === 3)
+        text = `${expectation} Main concerns: ${formatFactorList(limiting2).toLowerCase()}`;
+      else if (tier === 2)
+        text = `${expectation} Dominant issues: ${formatFactorList(limiting2).toLowerCase()}`;
+      else
+        text = expectation;
+      return text;
+    }
+
+    function sentenceCase(s) {
+      return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+    }
+
+    function recommendationFlag(score) {
+      if (score >= 80) return "Excellent";
+      if (score >= 70) return "Very Good";
+      if (score >= 60) return "Good";
+      if (score >= 50) return "Fair";
+      if (score >= 35) return "Poor";
+      if (score >= 25) return "Very Poor";
+      return "Unusable";
+    }
+
+    function qualityClassFromScore(score) {
+      if (score >= 80) return "quality-excellent";
+      if (score >= 70) return "quality-very-good";
+      if (score >= 60) return "quality-good";
+      if (score >= 50) return "quality-fair";
+      if (score >= 35) return "quality-poor";
+      if (score >= 25) return "quality-very-poor";
+      return "quality-unusable";
+    }
+
+    function forecastNightLabel(i) {
+      if (i === 1) return "Tonight";
+      if (i === 2) return "Tomorrow Night";
+      if (i === 3) return "Night Three";
+      return `Night ${i}`;
+    }
+
+    function historicalNightLabel(i) {
+      if (i === 1) return "Last Night";
+      if (i === 2) return "Two Nights Ago";
+      if (i === 3) return "Three Nights Ago";
+      return `${i} Nights Ago`;
+    }
+
+    function windToMps(value, unit) {
+      if (value == null) return 0;
+      const u = (unit || "").trim().toLowerCase().replace(/\s+/g, "");
+      if (["m/s", "ms", ""].includes(u)) return Number(value);
+      if (["km/h", "kmh"].includes(u)) return Number(value) / 3.6;
+      if (u === "mph") return Number(value) * 0.44704;
+      if (["kn", "kt", "knot", "knots"].includes(u)) return Number(value) * 0.514444;
+      return Number(value);
+    }
+
+    function sanitizeGust(windSpeedMps, gustSpeedMps) {
+      const maxReasonable = 22.4;
+      const multiplierMax = 2.0;
+      if (!gustSpeedMps || gustSpeedMps === 0) return windSpeedMps;
+      if (gustSpeedMps > maxReasonable) return maxReasonable;
+      if (windSpeedMps > 0 && gustSpeedMps > windSpeedMps * multiplierMax) return windSpeedMps * multiplierMax;
+      return gustSpeedMps;
+    }
+
+    function estimateGroundWind(wind10) {
+      if (wind10 <= 0) return 0;
+      const factor = Math.pow(targetWindHeightM / referenceWindHeightM, windShearExponent);
+      const est = wind10 * factor;
+      return Math.max(0, Math.min(est, wind10));
+    }
+
+    function estimateVisibility(precipMm, cloudPct) {
+      if (precipMm > 2) return 3000;
+      if (precipMm > 0.5) return 5000;
+      if (cloudPct > 80) return 7000;
+      return 10000;
+    }
+
+    async function fetchJson(url, params) {
+      const u = new URL(url);
+      Object.entries(params).forEach(([k, v]) => u.searchParams.set(k, v));
+      const res = await fetch(u.toString());
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`);
+      return res.json();
+    }
+
+    async function requestOpenMeteoJson(url, params) {
+      try {
+        return await fetchJson(url, params);
+      } catch (err) {
+        if (String(err.message).includes("400") && String(params.hourly).includes("visibility")) {
+          const fallback = { ...params, hourly: params.hourly.split(",").filter(v => v !== "visibility").join(",") };
+          return fetchJson(url, fallback);
+        }
+        throw err;
+      }
+    }
+
+    function parseHourlyPayload(data, isHistorical) {
+      const hourly = data.hourly || {};
+      const units = data.hourly_units || {};
+      const times = hourly.time || [];
+      const windUnit = units.wind_speed_10m || "m/s";
+      const gustUnit = units.wind_gusts_10m || windUnit;
+      const out = [];
+      for (let i = 0; i < times.length; i++) {
+        const temp = Number(hourly.temperature_2m?.[i] ?? 0);
+        const humidity = Number(hourly.relative_humidity_2m?.[i] ?? 0);
+        const wind10Raw = Number(hourly.wind_speed_10m?.[i] ?? 0);
+        const gust10Raw = Number(hourly.wind_gusts_10m?.[i] ?? 0);
+        const windDir10 = Number(hourly.wind_direction_10m?.[i] ?? NaN);
+        const wind10 = windToMps(wind10Raw, windUnit);
+        const gust10 = sanitizeGust(wind10, windToMps(gust10Raw, gustUnit));
+        const windGround = estimateGroundWind(wind10);
+        const gustGround = sanitizeGust(windGround, estimateGroundWind(gust10));
+        const cloud = Number(hourly.cloud_cover?.[i] ?? 0);
+        const precip = Number(hourly.precipitation?.[i] ?? 0);
+        const pressure = Number(hourly.surface_pressure?.[i] ?? 1013);
+        const hasVisibility = hourly.visibility && hourly.visibility[i] != null;
+        const visibility = hasVisibility ? Number(hourly.visibility[i]) : estimateVisibility(precip, cloud);
+        out.push({
+          timestamp: parseLocalDateTime(times[i]),
+          temp,
+          humidity,
+          wind_speed_10m: wind10,
+          gust_speed_10m: gust10,
+          wind_direction_10m: Number.isFinite(windDir10) ? windDir10 : null,
+          wind_speed_ground: windGround,
+          gust_speed_ground: gustGround,
+          cloud_cover: cloud,
+          precipitation: precip,
+          pressure,
+          visibility,
+          visibility_is_estimated: !hasVisibility,
+          conditions: cloud < 20 ? "Clear" : cloud < 80 ? "Cloudy" : "Overcast",
+                is_historical: isHistorical,
+              });
+            }
+            return out;
+          }
+          
+          async function detectTimezoneName(lat, lon, tzInput) {
+            if (tzInput && tzInput.trim().toLowerCase() !== "auto") return tzInput.trim();
+            const data = await fetchJson("https://api.open-meteo.com/v1/forecast", {
+              latitude: lat,
+              longitude: lon,
+              current: "temperature_2m",
+              timezone: "auto",
+            });
+            return data.timezone || "America/New_York";
+          }
+          
+          async function detectRegionName(lat, lon) {
+            const fallback = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+          
+            try {
+              const fcc = await fetchJson("https://geo.fcc.gov/api/census/block/find", {
+                latitude: lat,
+                longitude: lon,
+                format: "json",
+              });
+              const county = fcc.County?.name;
+              const state = fcc.State?.name;
+              if (county && state) return `${county}, ${state}`;
+              if (state) return state;
+              if (county) return county;
+            } catch (_) {
+              // Continue to global fallback.
+            }
+          
+            try {
+              const osm = await fetchJson("https://nominatim.openstreetmap.org/reverse", {
+                lat,
+                lon,
+                format: "jsonv2",
+                addressdetails: 1,
+                zoom: 10,
+              });
+              const address = osm.address || {};
+              const region = address.county || address.state_district || address.region || address.municipality;
+              const state = address.state || address.province || address.territory;
+              if (region && state) return `${region}, ${state}`;
+              if (state) return state;
+              if (region) return region;
+            } catch (_) {
+              // Use coordinate fallback below.
+            }
+          
+            return fallback;
+          }
+          
+          async function fetchForecast(lat, lon, timezone, forecastDays) {
+            const params = {
+              latitude: lat,
+              longitude: lon,
+              hourly: "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,precipitation,surface_pressure,visibility",
+              timezone,
+              forecast_days: Math.max(3, forecastDays),
+              windspeed_unit: "ms",
+              models: "best_match",
+            };
+            return parseHourlyPayload(await requestOpenMeteoJson("https://api.open-meteo.com/v1/forecast", params), false);
+          }
+          
+          async function fetchHistorical(lat, lon, timezone, daysBack = 3) {
+            const end = addDays(new Date(), -1);
+            const start = addDays(end, -(daysBack - 1));
+            const params = {
+              latitude: lat,
+              longitude: lon,
+              start_date: dateIso(start),
+              end_date: dateIso(end),
+              hourly: "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,precipitation,surface_pressure,visibility",
+              timezone,
+              windspeed_unit: "ms",
+            };
+            return parseHourlyPayload(await requestOpenMeteoJson("https://archive-api.open-meteo.com/v1/archive", params), true);
+          }
+          
+          const twilightCache = new Map();
+          async function getTwilightForDate(lat, lon, d) {
+            const key = `${lat},${lon},${dateIso(d)}`;
+            if (twilightCache.has(key)) return twilightCache.get(key);
+            try {
+              const data = await fetchJson("https://api.sunrise-sunset.org/json", {
+                lat,
+                lng: lon,
+                date: dateIso(d),
+                formatted: 0,
+              });
+              if (data.status !== "OK") throw new Error(data.status || "Twilight API failed");
+              const dawn = new Date(data.results.astronomical_twilight_begin);
+              const dusk = new Date(data.results.astronomical_twilight_end);
+              const out = { dawn, dusk };
+              twilightCache.set(key, out);
+              return out;
+            } catch (err) {
+              const fallback = {
+                dawn: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 5, 30),
+                dusk: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 20, 0),
+              };
+              twilightCache.set(key, fallback);
+              return fallback;
+            }
+          }
+          
+          const nightWindowCache = new Map();
+          async function twilightWindowForEvening(lat, lon, eveningDate) {
+            const key = `${lat},${lon},${dateIso(eveningDate)}`;
+            if (nightWindowCache.has(key)) return nightWindowCache.get(key);
+            const dusk = (await getTwilightForDate(lat, lon, eveningDate)).dusk;
+            const dawnNext = (await getTwilightForDate(lat, lon, addDays(eveningDate, 1))).dawn;
+            let start = floorHour(dusk);
+            let end = floorHour(dawnNext);
+            if (end <= start) end = new Date(eveningDate.getFullYear(), eveningDate.getMonth(), eveningDate.getDate() + 1, 5, 0);
+            const out = [start, end];
+            nightWindowCache.set(key, out);
+            return out;
+          }
+          
+          async function metricToNightKey(lat, lon, ts) {
+            const candidates = [new Date(ts.getFullYear(), ts.getMonth(), ts.getDate()), addDays(new Date(ts.getFullYear(), ts.getMonth(), ts.getDate()), -1)];
+            for (const eve of candidates) {
+              const [start, end] = await twilightWindowForEvening(lat, lon, eve);
+              if (ts >= start && ts <= end) return dateIso(eve);
+            }
+            return null;
+          }
+          
+          function getSeasonalWindWeightMultiplier(currentDate) {
+            // Foliage noise is now fully user-directed. The forecast is
+            // only three nights ahead, and the user can assess whether leafed-out
+            // trees are close enough to the recorder to add masking noise.
+            return Number(activeFoliageWindWeightMultiplier) || 1.0;
+          }
+          
+          function getPrecipitationWeight(precipMm) {
+            // Dynamic precipitation weighting: heavier rain → higher weight
+            for (const rule of PRECIPITATION_WEIGHT_RULES) {
+              if (precipMm >= rule.threshold_mm) {
+                return rule.weight;
+              }
+            }
+            return BASE_SCORING_WEIGHTS["Precipitation"];
+          }
+
+          function applyFoliageWindPenalty(windFactor, foliageMultiplier) {
+            const [score, explanation] = windFactor;
+            const multiplier = Number(foliageMultiplier) || 1.0;
+            if (multiplier <= 1.0) return windFactor;
+
+            // Foliage should increase the penalty from wind-in-leaves when wind is
+            // present. It should not make a treed site score better by merely
+            // giving a good wind score more weight in the overall average.
+            const windPenalty = 100 - score;
+            const adjustedScore = Math.max(0, 100 - (windPenalty * multiplier));
+            return [adjustedScore, explanation];
+          }
+          
+          function scoreWind(windGround, gustGround, wind10, gust10) {
+            const windMph = mpsToMph(windGround);
+            const gustMph = mpsToMph(gustGround);
+            const wind10Mph = mpsToMph(wind10);
+            const gust10Mph = mpsToMph(gust10);
+            let score, explanation;
+            if (windGround < 1.5) [score, explanation] = [92, `Near-silent (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+            else if (windGround < 3) [score, explanation] = [82, `Very calm (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+            else if (windGround < 4.5) [score, explanation] = [68, `Light breeze (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+            else if (windGround < 6) [score, explanation] = [52, `Moderate wind (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+            else if (windGround < 8) [score, explanation] = [35, `Windy (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+            else [score, explanation] = [15, `Heavy wind (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+          
+            if (gustGround >= 22.4) {
+              score *= 0.6;
+              explanation += " (gusts 50+ mph)";
+            } else if (gustGround > 7) {
+              score *= 0.8;
+              explanation += ` (gusts ${gustMph.toFixed(1)} mph; ${gust10Mph.toFixed(1)} mph @10m)`;
+            }
+            return [score, explanation];
+          }
+          
+          function scoreHumidity(h) {
+            const ideal = SEASONAL_CONFIG.expected_avg_humidity;
+            const range = 8;
+            if (Math.abs(h - ideal) < 3) return [88, `Optimal humidity (${h}% RH)`];
+            if (Math.abs(h - ideal) < range) return [78, `Good humidity (${h}% RH)`];
+            if (68 <= h && h <= 85) return [72, `Acceptable humidity (${h}% RH)`];
+            if (85 < h && h <= 92) return [58, `Humid (${h}% RH)`];
+            if (h > 92) return [35, `Very humid (${h}% RH)`];
+            return [50, `Dry (${h}% RH)`];
+          }
+          
+          function scoreVisibility(v) {
+            const mi = metersToMiles(v);
+            if (v >= 10000) return [88, `Clear visibility (${mi.toFixed(1)} mi)`];
+            if (v >= 8000) return [82, `Excellent visibility (${mi.toFixed(1)} mi)`];
+            if (v >= 6000) return [72, `Good visibility (${mi.toFixed(1)} mi)`];
+            if (v >= 4000) return [58, `Fair visibility with some haze (${mi.toFixed(1)} mi)`];
+            if (v >= 2000) return [38, `Limited visibility (${mi.toFixed(1)} mi)`];
+            return [15, `Poor visibility, fog/haze (${mi.toFixed(1)} mi)`];
+          }
+          
+          function scoreCloudCover(c) {
+            const ideal = SEASONAL_CONFIG.expected_avg_cloud_cover;
+            if (Math.abs(c - ideal) < 15) return [75, `Typical cloud cover (${c}%)`];
+            if (c >= 70) return [72, `Mostly cloudy (${c}%)`];
+            if (c >= 50) return [70, `Partly cloudy (${c}%)`];
+            if (c >= 30) return [68, `Mostly clear (${c}%)`];
+            if (c >= 10) return [65, `Mostly clear (${c}%)`];
+            return [60, `Clear sky (${c}%)`];
+          }
+          
+          function scorePressure(p) {
+            if (p >= 1025) return [85, `Very high pressure (${p.toFixed(1)} hPa)`];
+            if (p >= 1020) return [82, `High pressure (${p.toFixed(1)} hPa)`];
+            if (p >= 1015) return [75, `Elevated pressure (${p.toFixed(1)} hPa)`];
+            if (p >= 1010) return [65, `Moderate pressure (${p.toFixed(1)} hPa)`];
+            if (p >= 1005) return [48, `Low pressure (${p.toFixed(1)} hPa)`];
+            return [25, `Very low pressure (${p.toFixed(1)} hPa)`];
+          }
+          
+          function formatPrecipInches(mm) {
+            const inches = mmToInches(mm);
+            if (inches > 0 && inches < 0.01) return inches.toFixed(3);
+            return inches.toFixed(2);
+          }
+
+          function scorePrecipitation(p) {
+            const amount = Math.max(0, Number(p) || 0);
+            const inches = formatPrecipInches(amount);
+            if (amount < 0.02) return [90, "No precipitation"];
+            if (amount < 0.25) return [82, `Trace precipitation (${inches} in)`];
+            if (amount < 1.0) return [70, `Light precipitation (${inches} in)`];
+            if (amount < 2.5) return [48, `Light rain (${inches} in)`];
+            if (amount < 5.0) return [22, `Moderate rain (${inches} in)`];
+            return [8, `Heavy rain (${inches} in)`];
+          }
+          
+          function scoreTemperature(t) {
+            const f = celsiusToFahrenheit(t);
+            const minT = SEASONAL_CONFIG.season_temp_min;
+            const maxT = SEASONAL_CONFIG.season_temp_max;
+            const idealT = SEASONAL_CONFIG.season_temp_ideal_center;
+          
+            if (Math.abs(t - idealT) < 2) return [85, `Ideal temperature (${f.toFixed(0)}°F)`];
+            if (t >= minT && t <= maxT) return [75, `In-season temperature (${f.toFixed(0)}°F)`];
+            if ((t >= minT - 3 && t < minT) || (t > maxT && t <= maxT + 3)) return [65, `Near season edge (${f.toFixed(0)}°F)`];
+            return [45, `Outside typical season (${f.toFixed(0)}°F)`];
+          }
+          
+          function scoreInsectNoise(level) {
+            const normalized = (level || "low").toLowerCase();
+            if (normalized === "heavy") return [35, "Heavy insect chorus likely overlaps NFC frequencies"];
+            if (normalized === "moderate") return [65, "Moderate insect noise may mask faint or high-frequency NFC structure"];
+            return [100, "Low insect noise selected"];
+          }
+
+          function getInsectNoiseWeight(level) {
+            const normalized = (level || "low").toLowerCase();
+            if (normalized === "heavy") return 0.18;
+            if (normalized === "moderate") return 0.10;
+            return 0.00;
+          }
+
+          function analyzeForecast(weather) {
+            const windMultiplier = getSeasonalWindWeightMultiplier(weather.timestamp);
+            const factors = {
+              "Surface Wind": applyFoliageWindPenalty(
+                scoreWind(weather.wind_speed_ground, weather.gust_speed_ground, weather.wind_speed_10m, weather.gust_speed_10m),
+                windMultiplier
+              ),
+              "Precipitation": scorePrecipitation(weather.precipitation),
+              "Humidity": scoreHumidity(weather.humidity),
+              "Visibility": scoreVisibility(weather.visibility),
+              "Cloud Cover": scoreCloudCover(weather.cloud_cover),
+              "Pressure": scorePressure(weather.pressure),
+              "Temperature": scoreTemperature(weather.temp),
+              "Insect Noise": scoreInsectNoise(activeInsectNoiseLevel),
+            };
+          
+            // Dynamic weights
+            const dynamicWeights = { ...BASE_SCORING_WEIGHTS };
+            dynamicWeights["Precipitation"] = getPrecipitationWeight(weather.precipitation);
+            dynamicWeights["Insect Noise"] = getInsectNoiseWeight(activeInsectNoiseLevel);
+          
+            // Normalize so weights sum to 1
+            const totalWeight = Object.values(dynamicWeights).reduce((a, b) => a + b, 0);
+            const normalizer = 1.0 / totalWeight;
+            Object.keys(dynamicWeights).forEach(k => {
+              dynamicWeights[k] *= normalizer;
+            });
+          
+            const overall = Object.keys(dynamicWeights).reduce((sum, k) => sum + factors[k][0] * dynamicWeights[k], 0);
+            return { overall_score: overall, factors, dynamic_weights: dynamicWeights };
+          }
+          
+          function formatRange(vals, decimals = 0) {
+            const lo = Math.min(...vals);
+            const hi = Math.max(...vals);
+            const loR = Number(lo.toFixed(decimals));
+            const hiR = Number(hi.toFixed(decimals));
+            const fmt = v => decimals === 0 ? String(Math.round(v)) : v.toFixed(decimals);
+            return loR === hiR ? fmt(loR) : `${fmt(loR)}-${fmt(hiR)}`;
+          }
+          
+          function humidityLabel(rh) {
+            if (rh >= 90) return "Very humid";
+            if (rh >= 80) return "Humid";
+            if (rh >= 65) return "Moderate";
+            return "Dry";
+          }
+          
+          function visibilityLabelAndTip(miles) {
+            if (miles >= 6) return ["Clear", "excellent clarity and distance"];
+            if (miles >= 3) return ["Good", "good clarity for most recordings"];
+            if (miles >= 1.5) return ["Limited", "some attenuation; prioritize nearby sounds"];
+            return ["Poor", "significant attenuation; recording quality likely reduced"];
+          }
+          
+          function cloudLabel(c) {
+            if (c < 20) return "clear";
+            if (c < 50) return "partly cloudy";
+            if (c < 80) return "mostly cloudy";
+            return "overcast";
+          }
+          
+          function labelSpan(labels, ordered) {
+            const present = [...new Set(labels.map(l => ordered.indexOf(l)).filter(i => i >= 0))].sort((a, b) => a - b);
+            if (!present.length) return "Variable";
+            if (present.length === 1) return ordered[present[0]];
+            return `${ordered[present[0]]} to ${ordered[present[present.length - 1]]}`;
+          }
+          
+          function countTransitions(labels) {
+            let count = 0;
+            for (let i = 1; i < labels.length; i++) if (labels[i] !== labels[i - 1]) count++;
+            return count;
+          }
+          
+          function pressureDescription(values) {
+            const avg = values.reduce((a, b) => a + b, 0) / values.length;
+            const delta = values[values.length - 1] - values[0];
+            const span = Math.max(...values) - Math.min(...values);
+            const level = avg >= 1022 ? "High pressure" : avg >= 1010 ? "Moderate pressure" : "Low pressure";
+            const trend = delta >= 1.5 ? "rising" : delta <= -1.5 ? "falling" : "steady";
+            const variability = span <= 1.5 ? "very stable overnight" : span <= 3.5 ? "fairly stable overnight" : "more variable overnight";
+            return `${level}, ${trend}, ${variability} (${Math.min(...values).toFixed(1)}-${Math.max(...values).toFixed(1)} hPa; net ${delta >= 0 ? "+" : ""}${delta.toFixed(1)} hPa)`;
+          }
+          function windMicNoiseCategory(mph) {
+            // Estimated near-ground sustained wind at microphone height.
+            if (mph < 2) return "still";
+            if (mph < 4) return "very light";
+            if (mph < 7) return "light";
+            if (mph < 11) return "moderate";
+            if (mph < 16) return "heavy";
+            return "very heavy";
+          }
+
+          function windGustCategory(mph) {
+            // Gust language uses higher thresholds than sustained wind.
+            if (mph < 6) return "minimal gusts";
+            if (mph < 10) return "light gusts";
+            if (mph < 16) return "moderate gusts";
+            if (mph < 24) return "strong gusts";
+            if (mph < 32) return "heavy gusts";
+            return "very heavy gusts";
+          }
+
+          function windMicNoiseDescriptor(windMph, gustMph) {
+            const orderedWind = ["still", "very light", "light", "moderate", "heavy", "very heavy"];
+            const orderedGust = ["minimal gusts", "light gusts", "moderate gusts", "strong gusts", "heavy gusts", "very heavy gusts"];
+            const windLabels = windMph.map(windMicNoiseCategory);
+            const present = [...new Set(windLabels.map(label => orderedWind.indexOf(label)).filter(i => i >= 0))].sort((a, b) => a - b);
+            const first = orderedWind[present[0]] || "variable";
+            const last = orderedWind[present[present.length - 1]] || first;
+            let descriptor = first === last
+              ? `${first}`
+              : `from ${first} to ${last}`;
+
+            const windMax = Math.max(...windMph);
+            const windMin = Math.min(...windMph);
+            const gustMax = Math.max(...gustMph);
+            const gustLabel = windGustCategory(gustMax);
+            const gustIndex = orderedGust.indexOf(gustLabel);
+            const gustMeaningful = gustIndex >= orderedGust.indexOf("moderate gusts") || (gustMax >= 6 && gustMax - windMax >= 5);
+            const variable = windMax - windMin >= 5 || countTransitions(windLabels) >= 2;
+
+            if (gustMeaningful) {
+              descriptor += `, with ${gustLabel}`;
+            }
+            if (variable && first !== last) {
+              descriptor += "; variable overnight";
+            }
+            return sentenceCase(descriptor);
+          }
+
+          
+          function summarizeNightConditions(night) {
+            const weather = night.all_forecasts.map(r => r.weather);
+            const windMph = weather.map(w => mpsToMph(w.wind_speed_ground));
+            const gustMph = weather.map(w => mpsToMph(w.gust_speed_ground));
+            const humidityVals = weather.map(w => w.humidity);
+            const visMiles = weather.map(w => metersToMiles(w.visibility));
+            const cloudVals = weather.map(w => w.cloud_cover);
+            const pressureVals = weather.map(w => w.pressure);
+            const tempF = weather.map(w => celsiusToFahrenheit(w.temp));
+            const precipTotalMm = weather.reduce((sum, w) => sum + w.precipitation, 0);
+            const humiditySpan = labelSpan(humidityVals.map(humidityLabel), ["Very humid", "Humid", "Moderate", "Dry"]);
+            const visPairs = visMiles.map(visibilityLabelAndTip);
+            const visLabels = visPairs.map(x => x[0]);
+            const visTips = visPairs.map(x => x[1]);
+            let visDesc, visTip;
+            if (new Set(visLabels).size === 1) {
+              visDesc = visLabels[0];
+              visTip = visTips[0];
+            } else if (countTransitions(visLabels) >= 2) {
+              visDesc = "Variable";
+              visTip = "conditions fluctuate through the night";
+            } else {
+              visDesc = labelSpan(visLabels, ["Poor", "Limited", "Good", "Clear"]);
+              visTip = visTips.includes("significant attenuation; recording quality likely reduced") ? "poorer periods may reduce clarity" : "generally favorable for recording";
+            }
+            const cloudLabels = cloudVals.map(cloudLabel);
+            let cloudDesc = new Set(cloudLabels).size === 1
+              ? `${sentenceCase(cloudLabels[0])} throughout`
+              : `Going from ${cloudLabels[0]} to ${cloudLabels[cloudLabels.length - 1]}${countTransitions(cloudLabels) >= 2 ? " (variable in between)" : ""}`;
+            return {
+              "Surface Wind": `${windMicNoiseDescriptor(windMph, gustMph)}: ${formatRange(windMph, 1)} mph (max gust ${Math.max(...gustMph).toFixed(1)} mph)`,
+              "Humidity": `${humiditySpan} (${formatRange(humidityVals, 0)}% RH)`,
+              "Visibility": `${visDesc} (${formatRange(visMiles, 1)} mi); ${visTip}`,
+              "Cloud Cover": `${cloudDesc} (${formatRange(cloudVals, 0)}%)`,
+              "Pressure": pressureDescription(pressureVals),
+              "Temperature": `${formatRange(tempF, 0)}°F`,
+              "Total Precipitation": `${formatPrecipInches(precipTotalMm)} in (${precipTotalMm.toFixed(1)} mm)`,
+            };
+          }
+          
+          function factorAveragesForNight(night) {
+            const out = {};
+            for (const k of Object.keys(BASE_SCORING_WEIGHTS)) {
+              const vals = night.all_forecasts.map(row => row.score.factors[k][0]);
+              out[k] = vals.reduce((a, b) => a + b, 0) / vals.length;
+            }
+            return out;
+          }
+          
+          function factorWeightsForNight(night) {
+            const out = {};
+            for (const k of Object.keys(BASE_SCORING_WEIGHTS)) {
+              const vals = night.all_forecasts.map(row => row.score.dynamic_weights[k] ?? 0);
+              out[k] = vals.reduce((a, b) => a + b, 0) / vals.length;
+            }
+            return out;
+          }
+
+          function mainConcern(night) {
+            const fa = factorAveragesForNight(night);
+            const weights = factorWeightsForNight(night);
+            const penalties = {};
+            for (const k of Object.keys(BASE_SCORING_WEIGHTS)) penalties[k] = (100 - fa[k]) * (weights[k] ?? BASE_SCORING_WEIGHTS[k] ?? 0);
+            const worst = Object.keys(penalties).sort((a, b) => penalties[b] - penalties[a])[0];
+            return `${worst} (${mainConcernHint[worst] || "primary risk"})`;
+          }
+          
+          function peakWindow(night, margin = 5) {
+            const rows = [...night.all_forecasts].sort((a, b) => a.time - b.time);
+            if (!rows.length) return [night.best_time, night.best_time];
+            const bestScore = Math.max(...rows.map(r => r.score.overall_score));
+            const threshold = bestScore - margin;
+            const bestTime = night.best_time;
+            const qualified = rows.filter(r => r.score.overall_score >= threshold).map(r => r.time);
+            if (!qualified.length) return [bestTime, bestTime];
+            const groups = [];
+            let current = [qualified[0]];
+            for (let i = 1; i < qualified.length; i++) {
+              if (qualified[i] - qualified[i - 1] === 3600000) current.push(qualified[i]);
+              else { groups.push(current); current = [qualified[i]]; }
+            }
+            groups.push(current);
+            const containing = groups.find(g => g.some(t => t.getTime() === bestTime.getTime()));
+            const chosen = containing || groups.sort((a, b) => b.length - a.length)[0];
+            return [chosen[0], chosen[chosen.length - 1]];
+          }
+          
+          function checkHourlyContiguity(timestamps) {
+            if (timestamps.length <= 1) return [true, []];
+            const sorted = [...timestamps].sort((a, b) => a - b);
+            const gaps = [];
+            for (let i = 1; i < sorted.length; i++) {
+              if (sorted[i] - sorted[i - 1] !== 3600000) gaps.push([sorted[i - 1], sorted[i]]);
+            }
+            return [gaps.length === 0, gaps];
+          }
+          
+          async function analyzeNightWindows(lat, lon, metrics, reverseChronological = false) {
+            const windows = new Map();
+            for (const m of metrics) {
+              const key = await metricToNightKey(lat, lon, m.timestamp);
+              if (key) {
+                if (!windows.has(key)) windows.set(key, []);
+                windows.get(key).push(m);
+              }
+            }
+            const keys = [...windows.keys()].sort();
+            if (reverseChronological) keys.reverse();
+            const nights = [];
+            for (const key of keys) {
+              const [y, mo, da] = key.split("-").map(Number);
+              const evening = new Date(y, mo - 1, da);
+              const [twStart, twEnd] = await twilightWindowForEvening(lat, lon, evening);
+              const rows = windows.get(key).filter(w => w.timestamp >= twStart && w.timestamp <= twEnd).sort((a, b) => a.timestamp - b.timestamp);
+              if (!rows.length) continue;
+              const scored = rows.map(w => ({ time: w.timestamp, score: analyzeForecast(w), weather: w }));
+              const avg = scored.reduce((sum, r) => sum + r.score.overall_score, 0) / scored.length;
+              const best = scored.reduce((a, b) => b.score.overall_score > a.score.overall_score ? b : a, scored[0]);
+              const worst = scored.reduce((a, b) => b.score.overall_score < a.score.overall_score ? b : a, scored[0]);
+              const times = scored.map(r => r.time);
+              const [contiguous, gaps] = checkHourlyContiguity(times);
+              const night = {
+                night_date: key,
+                twilight_start: twStart,
+                twilight_end: twEnd,
+                window_start: times[0],
+                window_end: times[times.length - 1],
+                is_contiguous: contiguous,
+                gaps,
+                hours_count: times.length,
+                average_score: avg,
+                best_time: best.time,
+                least_favorable_time: worst.time,
+                best_condition_score: best.score,
+                all_forecasts: scored,
+              };
+              const [peakStart, peakEnd] = peakWindow(night);
+              night.peak_start = peakStart;
+              night.peak_end = peakEnd;
+              night.deploy_by = addHours(peakStart, -1);
+              night.main_concern = mainConcern(night);
+              nights.push(night);
+            }
+            return nights;
+          }
+          
+          async function nextEveningAnchor(lat, lon) {
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const [tonightStart] = await twilightWindowForEvening(lat, lon, today);
+            if (now < tonightStart) return tonightStart;
+            const [tomorrowStart] = await twilightWindowForEvening(lat, lon, addDays(today, 1));
+            return tomorrowStart;
+          }
+          
+          async function getBestNights(lat, lon, forecasts, daysAhead) {
+            const nights = await analyzeNightWindows(lat, lon, forecasts, false);
+            const anchor = await nextEveningAnchor(lat, lon);
+            return nights.filter(n => n.twilight_start >= anchor).slice(0, daysAhead);
+          }
+          
+          async function getHistoricalNights(lat, lon, historical, daysBack = 3) {
+            const nights = await analyzeNightWindows(lat, lon, historical, true);
+            return nights.slice(0, daysBack);
+          }
+          
+          function serializeWeather(w) {
+            return {
+              timestamp: localIso(w.timestamp),
+              temp_c: w.temp,
+              temp_f: Number(celsiusToFahrenheit(w.temp).toFixed(1)),
+              humidity_pct: w.humidity,
+              wind_speed_10m_mps: w.wind_speed_10m,
+              wind_speed_10m_mph: Number(mpsToMph(w.wind_speed_10m).toFixed(1)),
+              gust_speed_10m_mps: w.gust_speed_10m,
+              gust_speed_10m_mph: Number(mpsToMph(w.gust_speed_10m).toFixed(1)),
+              wind_direction_10m_deg: w.wind_direction_10m,
+              wind_direction_10m_compass: w.wind_direction_10m == null ? null : compassDirection(w.wind_direction_10m),
+              wind_speed_ground_mps: w.wind_speed_ground,
+              wind_speed_ground_mph: Number(mpsToMph(w.wind_speed_ground).toFixed(1)),
+              gust_speed_ground_mps: w.gust_speed_ground,
+              gust_speed_ground_mph: Number(mpsToMph(w.gust_speed_ground).toFixed(1)),
+              cloud_cover_pct: w.cloud_cover,
+              precipitation_mm: w.precipitation,
+              precipitation_in: Number(mmToInches(w.precipitation).toFixed(3)),
+              pressure_hpa: w.pressure,
+              visibility_m: w.visibility,
+              visibility_mi: Number(metersToMiles(w.visibility).toFixed(2)),
+              visibility_is_estimated: w.visibility_is_estimated,
+              conditions: w.conditions,
+              is_historical: w.is_historical,
+            };
+          }
+          
+          function recommendationLinesForNight(night, historical = false) {
+            const fa = factorAveragesForNight(night);
+            const factorDict = {};
+            for (const k of Object.keys(BASE_SCORING_WEIGHTS)) factorDict[k] = [fa[k] ?? 100, ""];
+            return recommendationLinesFromScoreAndFactors(night.average_score, factorDict, historical);
+          }
+          function stripQualityQualifier(text) {
+            return splitQualityExpectation(text).expectation;
+          }
+
+          function serializeNight(night, label, type, localNoiseContext = null) {
+            const rawLabelText = recommendationLinesForNight(night, type === "historical");
+            const labelText = type === "historical" ? stripQualityQualifier(rawLabelText) : rawLabelText;
+            const factorAvgs = factorAveragesForNight(night);
+                  const factorAvgsSerialized = {};
+                  for (const [k, v] of Object.entries(factorAvgs)) {
+                    factorAvgsSerialized[k] = { score_100: Number(v.toFixed(2)), score_10: score100To10(v) };
+                  }
+                  const bestHourFactors = {};
+                  for (const [k, v] of Object.entries(night.best_condition_score.factors)) {
+                    bestHourFactors[k] = { score_100: Number(v[0].toFixed(2)), score_10: score100To10(v[0]), explanation: v[1] };
+                  }
+                  return {
+                    type,
+                    label,
+                    window_start: localIso(night.window_start),
+                    window_end: localIso(night.window_end),
+                    twilight_start: localIso(night.twilight_start),
+                    twilight_end: localIso(night.twilight_end),
+                    average_score_100: Number(night.average_score.toFixed(2)),
+                    average_score_10: score100To10(night.average_score),
+                    quality_expectation: labelText,
+                    id_expectation: idExpectation(night.average_score, type === "historical"),
+                    best_time: fmtTime(night.best_time),
+                    least_favorable_time: fmtTime(night.least_favorable_time),
+                    peak_start: fmtTime(night.peak_start),
+                    peak_end: fmtTime(night.peak_end),
+                    deploy_by: fmtTime(night.deploy_by),
+                    main_concern: night.main_concern,
+                    hours_count: night.hours_count,
+                    visibility_estimated_any: night.all_forecasts.some(row => row.weather.visibility_is_estimated),
+                    human_noise_context: localNoiseContext,
+                    night_conditions_summary: summarizeNightConditions(night),
+                    factor_averages: factorAvgsSerialized,
+                    best_hour_factor_scores: bestHourFactors,
+                    hourly: night.all_forecasts.map(row => ({
+                      timestamp: localIso(row.time),
+                      overall_score_100: Number(row.score.overall_score.toFixed(2)),
+                      overall_score_10: score100To10(row.score.overall_score),
+                      weather: serializeWeather(row.weather),
+                    })),
+                  };
+                }
+            
+                function generateStructuredOutput(lat, lon, timezone, regionName, forecastNights, historicalNights, localNoiseResources = null) {
+                  return {
+                    model_version: MODEL_VERSION,
+                    generated_at: localIso(new Date()),
+                    location: { latitude: lat, longitude: lon, region_state_name: regionName, timezone },
+                    units: {
+                      wind: { primary: "m/s", display: "mph" },
+                      temperature: { primary: "C", display: "F" },
+                      visibility: { primary: "m", display: "mi" },
+                      precipitation: { primary: "mm", display: "in" },
+                      pressure: "hPa",
+                      humidity: "%",
+                      scores_internal: "0-100",
+                      scores_display: "0-10",
+                    },
+                    base_weights: BASE_SCORING_WEIGHTS,
+                    foliage_wind_penalty_multiplier: Number(activeFoliageWindWeightMultiplier),
+                    insect_noise_level: activeInsectNoiseLevel,
+                    insect_noise_weight: getInsectNoiseWeight(activeInsectNoiseLevel),
+                    weight_rationale: weightRationale,
+                    human_noise_method: localNoiseResources ? "Optional. Nearby roads and airports are looked up once; road-traffic and aircraft-noise notes are assessed separately for each night using that night's wind, humidity, pressure, and cloud cover. Road and aircraft context is not included in the weighted acoustic score; insect noise is included when selected." : "Optional human-made noise lookup was not run.",
+                    local_noise_warnings: localNoiseResources?.warnings || [],
+                    forecast_nights: forecastNights.map((night, i) => serializeNight(night, forecastNightLabel(i + 1), "forecast", localNoiseResources ? buildNoiseContextForNight(localNoiseResources, night) : null)),
+                    historical_nights: historicalNights.map((night, i) => serializeNight(night, historicalNightLabel(i + 1), "historical", localNoiseResources ? buildNoiseContextForNight(localNoiseResources, night) : null)),
+                  };
+                }
+            
+                function decisionSummaryLine(label, night) {
+                  const rec = recommendationFlag(night.average_score);
+                  const peak = `${fmtTime(night.peak_start)}-${fmtTime(night.peak_end)}`;
+                  return `${label.padEnd(16)} Expect: ${night.average_score >= 60 ? "Good audio" : night.average_score >= 45 ? "Moderate audio" : "Poor audio"}\n${"".padEnd(16)} Best: ${fmtTime(night.best_time)}  Peak: ${peak}\n${"".padEnd(16)} Primary concern: ${primaryConcernDisplay(night.main_concern)}`;
+                }
+            
+                function lowercaseFactorAfterColon(s) {
+                  return s.replace(/^([A-Za-z ]+)( \()/, (m, factor, rest) => factor.toLowerCase() + rest);
+                }
+
+                function primaryConcernDisplay(s) {
+                  return sentenceCase(lowercaseFactorAfterColon(s));
+                }
+            
+
+                function compassDirection(deg) {
+                  if (deg == null || !Number.isFinite(Number(deg))) return "unknown";
+                  const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+                  return dirs[Math.round((((Number(deg) % 360) + 360) % 360) / 22.5) % 16];
+                }
+
+                function haversineMiles(lat1, lon1, lat2, lon2) {
+                  const R = 3958.7613;
+                  const toRad = d => d * Math.PI / 180;
+                  const dLat = toRad(lat2 - lat1);
+                  const dLon = toRad(lon2 - lon1);
+                  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+                  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                }
+
+                function bearingDegrees(lat1, lon1, lat2, lon2) {
+                  const toRad = d => d * Math.PI / 180;
+                  const toDeg = r => r * 180 / Math.PI;
+                  const y = Math.sin(toRad(lon2 - lon1)) * Math.cos(toRad(lat2));
+                  const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lon2 - lon1));
+                  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+                }
+
+                function angleDiff(a, b) {
+                  const d = Math.abs((((a - b) % 360) + 540) % 360 - 180);
+                  return d;
+                }
+
+                function featurePoints(el) {
+                  if (Array.isArray(el.geometry) && el.geometry.length) return el.geometry.map(g => [g.lat, g.lon]);
+                  if (el.lat != null && el.lon != null) return [[el.lat, el.lon]];
+                  if (el.center?.lat != null && el.center?.lon != null) return [[el.center.lat, el.center.lon]];
+                  return [];
+                }
+
+                function closestPointOnFeature(lat, lon, el) {
+                  const pts = featurePoints(el);
+                  if (!pts.length) return null;
+                  let best = null;
+                  for (const [pLat, pLon] of pts) {
+                    const miles = haversineMiles(lat, lon, pLat, pLon);
+                    if (!best || miles < best.distance_mi) best = { lat: pLat, lon: pLon, distance_mi: miles, bearing_deg: bearingDegrees(lat, lon, pLat, pLon) };
+                  }
+                  return best;
+                }
+
+                const OVERPASS_ENDPOINTS = [
+                  "https://overpass-api.de/api/interpreter",
+                  "https://overpass.kumi.systems/api/interpreter",
+                ];
+
+                const BUILT_IN_MAJOR_AIRPORTS = [
+                  { name: "Boston Logan International Airport", iata: "BOS", icao: "KBOS", lat: 42.3656, lon: -71.0096, aerodrome_type: "international" },
+                  { name: "Laurence G. Hanscom Field", iata: "BED", icao: "KBED", lat: 42.4699, lon: -71.2890, aerodrome_type: "public" },
+                  { name: "Norwood Memorial Airport", iata: "OWD", icao: "KOWD", lat: 42.1905, lon: -71.1729, aerodrome_type: "public" },
+                  { name: "Beverly Regional Airport", iata: "BVY", icao: "KBVY", lat: 42.5842, lon: -70.9165, aerodrome_type: "public" },
+                  { name: "Worcester Regional Airport", iata: "ORH", icao: "KORH", lat: 42.2673, lon: -71.8757, aerodrome_type: "public" },
+                  { name: "Rhode Island T. F. Green International Airport", iata: "PVD", icao: "KPVD", lat: 41.7240, lon: -71.4282, aerodrome_type: "international" },
+                  { name: "Manchester-Boston Regional Airport", iata: "MHT", icao: "KMHT", lat: 42.9326, lon: -71.4357, aerodrome_type: "public" },
+                ];
+
+                function boundingBoxAround(lat, lon, radiusM) {
+                  const latDelta = radiusM / 111320;
+                  const lonDelta = radiusM / (111320 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
+                  return {
+                    south: lat - latDelta,
+                    west: lon - lonDelta,
+                    north: lat + latDelta,
+                    east: lon + lonDelta,
+                  };
+                }
+
+                async function fetchOverpass(query) {
+                  let lastError = null;
+                  for (const endpoint of OVERPASS_ENDPOINTS) {
+                    try {
+                      const controller = new AbortController();
+                      const timer = setTimeout(() => controller.abort(), 28000);
+                      const res = await fetch(endpoint, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+                        body: new URLSearchParams({ data: query }).toString(),
+                        signal: controller.signal,
+                      });
+                      clearTimeout(timer);
+                      if (!res.ok) throw new Error(`Overpass ${res.status}: ${res.statusText}`);
+                      return await res.json();
+                    } catch (err) {
+                      lastError = err;
+                      try {
+                        const u = new URL(endpoint);
+                        u.searchParams.set("data", query);
+                        const controller = new AbortController();
+                        const timer = setTimeout(() => controller.abort(), 28000);
+                        const res = await fetch(u.toString(), { method: "GET", signal: controller.signal });
+                        clearTimeout(timer);
+                        if (!res.ok) throw new Error(`Overpass ${res.status}: ${res.statusText}`);
+                        return await res.json();
+                      } catch (err2) {
+                        lastError = err2;
+                      }
+                    }
+                  }
+                  throw lastError || new Error("Overpass lookup failed");
+                }
+
+                async function fetchNearbyHighways(lat, lon, radiusM = 8000) {
+                  const radii = [3000, radiusM, 12000];
+                  let lastError = null;
+                  for (const r of radii) {
+                    try {
+                      const b = boundingBoxAround(lat, lon, r);
+                      // Clip returned geometry to the local bounding box. Without this,
+                      // Overpass may return long highway geometries that are slow enough
+                      // to time out, producing a misleading "Could not check" result.
+                      const query = `[out:json][timeout:18];(way(around:${r},${lat},${lon})["highway"~"^(motorway|trunk|primary)$"];);out tags geom(${b.south},${b.west},${b.north},${b.east});`;
+                      const data = await fetchOverpass(query);
+                      const results = (data.elements || []).map(el => {
+                        const c = closestPointOnFeature(lat, lon, el);
+                        return c ? { ...c, name: el.tags?.name || el.tags?.ref || "unnamed road", road_class: el.tags?.highway || "road" } : null;
+                      }).filter(Boolean).sort((a, b) => a.distance_mi - b.distance_mi);
+                      if (results.length) return results;
+                    } catch (err) {
+                      lastError = err;
+                    }
+                  }
+                  if (lastError) throw lastError;
+                  return [];
+                }
+
+                function builtInAirportsNear(lat, lon, radiusM = 35000) {
+                  const radiusMi = radiusM / 1609.344;
+                  return BUILT_IN_MAJOR_AIRPORTS.map(a => ({
+                    distance_mi: haversineMiles(lat, lon, a.lat, a.lon),
+                    bearing_deg: bearingDegrees(lat, lon, a.lat, a.lon),
+                    name: a.name,
+                    iata: a.iata,
+                    icao: a.icao,
+                    aerodrome_type: a.aerodrome_type,
+                    source: "built-in fallback",
+                  })).filter(a => a.distance_mi <= radiusMi).sort((a, b) => a.distance_mi - b.distance_mi);
+                }
+
+                async function fetchNearbyAirportsAndRunways(lat, lon, radiusM = 35000) {
+                  const query = `[out:json][timeout:25];(nwr(around:${radiusM},${lat},${lon})["aeroway"="aerodrome"];way(around:${radiusM},${lat},${lon})["aeroway"="runway"];);out tags center geom;`;
+                  const data = await fetchOverpass(query);
+                  const airports = [];
+                  const runways = [];
+                  for (const el of data.elements || []) {
+                    const c = closestPointOnFeature(lat, lon, el);
+                    if (!c) continue;
+                    if (el.tags?.aeroway === "aerodrome") airports.push({
+                      ...c,
+                      name: el.tags?.name || el.tags?.iata || el.tags?.icao || "mapped airport",
+                      iata: el.tags?.iata || "",
+                      icao: el.tags?.icao || "",
+                      aerodrome_type: el.tags?.["aerodrome:type"] || el.tags?.aerodrome || "",
+                      source: "OpenStreetMap",
+                    });
+                    if (el.tags?.aeroway === "runway") {
+                      const pts = featurePoints(el);
+                      if (pts.length >= 2) {
+                        const first = pts[0];
+                        const last = pts[pts.length - 1];
+                        const runwayBearing = bearingDegrees(first[0], first[1], last[0], last[1]);
+                        runways.push({ ...c, name: el.tags?.ref || el.tags?.name || "runway", site_bearing_deg: c.bearing_deg, runway_axis_deg: runwayBearing });
+                      }
+                    }
+                  }
+                  const fallbackAirports = builtInAirportsNear(lat, lon, radiusM);
+                  const combinedAirports = [...airports];
+                  for (const fb of fallbackAirports) {
+                    const duplicate = combinedAirports.some(a => (a.iata && a.iata === fb.iata) || haversineMiles(a.lat || lat, a.lon || lon, fb.lat || lat, fb.lon || lon) < 0.5 || a.name === fb.name);
+                    if (!duplicate) combinedAirports.push(fb);
+                  }
+                  return { airports: combinedAirports.sort((a, b) => a.distance_mi - b.distance_mi), runways: runways.sort((a, b) => a.distance_mi - b.distance_mi) };
+                }
+
+                function propagationForWeatherRows(rows) {
+                  if (!rows.length) return { summary: "No forecast hours available for propagation context.", wind_direction_deg: null };
+                  const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+                  const windMph = avg(rows.map(w => mpsToMph(w.wind_speed_ground)));
+                  const humidity = avg(rows.map(w => w.humidity));
+                  const pressure = avg(rows.map(w => w.pressure));
+                  const cloud = avg(rows.map(w => w.cloud_cover));
+                  const dirRows = rows.filter(w => w.wind_direction_10m != null);
+                  const windDir = dirRows.length ? circularMeanDegrees(dirRows.map(w => w.wind_direction_10m)) : null;
+                  let level = "limited";
+                  if (windMph < 4 && humidity >= 75 && pressure >= 1015) level = "elevated";
+                  else if (windMph < 7 && humidity >= 65) level = "moderate";
+                  return {
+                    level,
+                    wind_speed_ground_mph: Number(windMph.toFixed(1)),
+                    humidity_pct: Number(humidity.toFixed(0)),
+                    pressure_hpa: Number(pressure.toFixed(1)),
+                    cloud_cover_pct: Number(cloud.toFixed(0)),
+                    wind_direction_deg: windDir,
+                    wind_direction_compass: windDir == null ? "unknown" : compassDirection(windDir),
+                    summary: `${sentenceCase(level)} potential for distant human-made noise to carry based on average near-ground wind ${windMph.toFixed(1)} mph, humidity ${humidity.toFixed(0)}%, pressure ${pressure.toFixed(1)} hPa, and cloud cover ${cloud.toFixed(0)}%.`,
+                  };
+                }
+
+                function propagationForNight(night) {
+                  return propagationForWeatherRows(night.all_forecasts.map(r => r.weather));
+                }
+
+                function averageForecastPropagation(forecastNights) {
+                  return propagationForWeatherRows(forecastNights.flatMap(n => n.all_forecasts.map(r => r.weather)));
+                }
+
+                function circularMeanDegrees(values) {
+                  const toRad = d => d * Math.PI / 180;
+                  const toDeg = r => r * 180 / Math.PI;
+                  const sin = values.reduce((sum, v) => sum + Math.sin(toRad(v)), 0) / values.length;
+                  const cos = values.reduce((sum, v) => sum + Math.cos(toRad(v)), 0) / values.length;
+                  return (toDeg(Math.atan2(sin, cos)) + 360) % 360;
+                }
+
+                function highwayNoiseLabelFromPoints(points) {
+                  if (points >= 8) return "disruptive";
+                  if (points >= 5) return "some";
+                  return "little if any";
+                }
+
+                function aircraftNoiseLabelFromPoints(points) {
+                  if (points >= 8) return "disruptive";
+                  if (points >= 5) return "occasional";
+                  return "little if any";
+                }
+
+                function roadClassPlainLabel(roadClass) {
+                  if (roadClass === "motorway") return "major highway";
+                  if (roadClass === "trunk") return "major through-road";
+                  if (roadClass === "primary") return "primary road";
+                  return "road";
+                }
+
+                function assessHighwayNoise(highways, propagation) {
+                  if (!highways.length) return { risk: "little if any", summary: "No motorway, trunk, or primary road was found within about 7 miles of the selected point.", nearest: null };
+                  const nearest = highways[0];
+                  const classWeight = nearest.road_class === "motorway" ? 3 : nearest.road_class === "trunk" ? 2 : 1;
+                  const upwind = propagation.wind_direction_deg == null ? false : angleDiff(nearest.bearing_deg, propagation.wind_direction_deg) <= 50;
+                  let points = classWeight;
+                  if (nearest.distance_mi < 0.5) points += 4;
+                  else if (nearest.distance_mi < 1.0) points += 3;
+                  else if (nearest.distance_mi < 2.0) points += 1;
+                  if (propagation.level === "elevated") points += 2;
+                  else if (propagation.level === "moderate") points += 1;
+                  if (upwind) points += 2;
+                  const risk = highwayNoiseLabelFromPoints(points);
+                  const direction = `${compassDirection(nearest.bearing_deg)} of site`;
+                  const windNote = propagation.wind_direction_deg == null ? "wind direction unavailable" : upwind ? `wind from ${propagation.wind_direction_compass} may carry traffic noise toward the recorder` : `wind from ${propagation.wind_direction_compass} does not put the nearest major road directly upwind`;
+                  const roadLabel = roadClassPlainLabel(nearest.road_class);
+                  return {
+                    risk,
+                    points,
+                    nearest,
+                    summary: `${nearest.name} is a ${roadLabel} ${nearest.distance_mi.toFixed(1)} mi ${direction}; ${windNote}. ${propagation.summary}`,
+                  };
+                }
+
+                function assessAirportNoise(airportData, propagation) {
+                  const airports = airportData.airports || [];
+                  const runways = airportData.runways || [];
+                  if (!airports.length) return { risk: "little if any", summary: "No mapped or built-in major airport was found within about 22 miles of the selected point. No live or scheduled flight data is used.", nearest: null, runway_context: null };
+                  const nearest = airports[0];
+                  // Corridor estimate: if the selected site is close to a mapped runway and roughly aligned with its axis.
+                  const aligned = runways.map(r => {
+                    const axisDiff = Math.min(
+                      angleDiff(r.site_bearing_deg, r.runway_axis_deg),
+                      angleDiff(r.site_bearing_deg, (r.runway_axis_deg + 180) % 360)
+                    );
+                    return { ...r, axis_diff_deg: axisDiff };
+                  }).filter(r => r.distance_mi <= 10 && r.axis_diff_deg <= 25).sort((a, b) => a.axis_diff_deg - b.axis_diff_deg)[0] || null;
+                  const major = Boolean(nearest.iata || nearest.icao || /international|public|commercial|domestic/i.test(nearest.aerodrome_type));
+                  let points = major ? 3 : 1;
+                  if (nearest.distance_mi < 3) points += 4;
+                  else if (nearest.distance_mi < 6) points += 3;
+                  else if (nearest.distance_mi < 10) points += 1;
+                  if (aligned) points += 2;
+                  if (propagation.level === "elevated") points += 1;
+                  const risk = aircraftNoiseLabelFromPoints(points);
+                  const codes = [nearest.iata, nearest.icao].filter(Boolean).join("/");
+                  const runwayNote = aligned ? `A mapped runway appears roughly aligned with the site (${aligned.axis_diff_deg.toFixed(0)}° off axis).` : "No nearby mapped runway was clearly aligned with the site.";
+                  const sourceNote = nearest.source === "built-in fallback" ? " Airport location came from the built-in fallback list because the map lookup was unavailable or incomplete." : "";
+                  return {
+                    risk,
+                    points,
+                    nearest,
+                    runway_context: aligned,
+                    summary: `${nearest.name}${codes ? ` (${codes})` : ""} is ${nearest.distance_mi.toFixed(1)} mi ${compassDirection(nearest.bearing_deg)} of site. ${runwayNote}${sourceNote} No live or scheduled flight data is used.`,
+                  };
+                }
+
+                async function fetchLocalNoiseResources(lat, lon) {
+                  const resources = { highways: [], airportData: { airports: [], runways: [] }, warnings: [] };
+
+                  try {
+                    resources.highways = await fetchNearbyHighways(lat, lon);
+                  } catch (err) {
+                    console.warn("Highway lookup failed", err);
+                    resources.highways = null;
+                    resources.warnings.push(`Highway lookup: ${String(err.message || err)}`);
+                  }
+
+                  try {
+                    resources.airportData = await fetchNearbyAirportsAndRunways(lat, lon);
+                  } catch (err) {
+                    console.warn("Airport lookup failed", err);
+                    const fallbackAirports = builtInAirportsNear(lat, lon, 35000);
+                    resources.airportData = { airports: fallbackAirports, runways: [] };
+                    if (fallbackAirports.length) {
+                      resources.warnings.push(`Airport lookup used built-in fallback: ${String(err.message || err)}`);
+                    } else {
+                      resources.warnings.push(`Airport lookup: ${String(err.message || err)}`);
+                    }
+                  }
+                  return resources;
+                }
+
+                function buildNoiseContextForNight(resources, night) {
+                  const propagation = propagationForNight(night);
+                  if (!resources) {
+                    return {
+                      propagation,
+                      highway: { risk: "unknown", summary: "Could not check nearby major roads because the optional lookup did not run or was unavailable.", nearest: null },
+                      airport: { risk: "unknown", summary: "Could not check nearby airports because the optional lookup did not run or was unavailable.", nearest: null, runway_context: null },
+                      warnings: [],
+                    };
+                  }
+                  return {
+                    propagation,
+                    highway: resources.highways === null ? { risk: "unknown", summary: "Could not check nearby major roads. The OpenStreetMap/Overpass lookup failed or timed out; this does not mean road traffic is absent.", nearest: null } : assessHighwayNoise(resources.highways, propagation),
+                    airport: assessAirportNoise(resources.airportData || { airports: [], runways: [] }, propagation),
+                    warnings: resources.warnings || [],
+                  };
+                }
+
+                async function fetchLocalNoiseContext(lat, lon, forecastNights) {
+                  const resources = await fetchLocalNoiseResources(lat, lon);
+                  return buildNoiseContextForNight(resources, forecastNights[0]);
+                }
+
+                function humanNoiseLabel(value, kind) {
+                  if (!value || value === "unknown") return "Could not check";
+                  return sentenceCase(value);
+                }
+
+                function localNoiseContextSummary(context) {
+                  if (!context) return "Not checked. Enable the optional human-made noise check before generating the forecast.";
+                  const highwayRisk = humanNoiseLabel(context.highway?.risk, "road");
+                  const airportRisk = humanNoiseLabel(context.airport?.risk, "aircraft");
+                  const propagation = context.propagation?.level ? sentenceCase(context.propagation.level) : "Could not assess";
+                  return `Carrying road noise: ${highwayRisk}. Carrying aircraft noise: ${airportRisk}.`;
+                }
+
+                function localNoiseContextDetails(context) {
+                  if (!context) return [];
+                  return [
+                    ["Carrying road noise", humanNoiseLabel(context.highway?.risk, "road"), context.highway?.summary || "Could not check nearby major-road context."],
+                    ["Carrying aircraft noise", humanNoiseLabel(context.airport?.risk, "aircraft"), context.airport?.summary || "Could not check nearby airport context."],
+                  ];
+                }
+
+            
+                function generateReport(lat, lon, timezone, regionName, forecastNights, historicalNights, localNoiseResources = null) {
+                  if (!forecastNights.length) return "Unable to fetch weather data. Please check your internet connection or CORS/browser privacy settings.";
+                  let report = `\n${"=".repeat(78)}\n`;
+                  report += "NOCTURNAL AUDIO RECORDING ACOUSTIC ENVIRONMENT FORECAST\n";
+                  report += "Scores sound clarity and propagation conditions. Does not forecast bird activity or migration.\n";
+                  report += `Location: ${lat}°, ${lon}°  |  Region: ${regionName}  |  Timezone: ${timezone}\n`;
+                  report += "Customize scoring thresholds and seasonal baselines in the script's SEASONAL_CONFIG section.\n";
+                  report += `Generated: ${fmtDateTime(new Date())}\n`;
+                  report += `${"=".repeat(78)}\n`;
+            
+                  report += "\nDECISION SUMMARY (Quick Scan)\n";
+                  report += `${"-".repeat(78)}\n`;
+                  forecastNights.forEach((night, i) => {
+                    report += decisionSummaryLine(forecastNightLabel(i + 1), night) + "\n\n";
+                  });
+            
+                  report += `${"=".repeat(78)}\n`;
+                  report += "FORECAST DETAIL (Next Night Windows)\n";
+                  report += `${"=".repeat(78)}\n`;
+                  forecastNights.forEach((night, i) => {
+                    const labelText = recommendationLinesForNight(night, false);
+                    const nightConditions = summarizeNightConditions(night);
+                    report += `\n${i + 1}. ${forecastNightLabel(i + 1)}: ${fmtDateTime(night.twilight_start)} (Dusk hour) → ${fmtDateTime(night.twilight_end)} (Dawn hour)\n`;
+                    report += `   ${labelText}\n`;
+                    report += `   Acoustic Quality Score: ${formatScore10(night.average_score)}\n`;
+                    report += `   Quality Expectation: ${recommendationFlag(night.average_score)}\n`;
+                    report += `   Best Hour: ${fmtTime(night.best_time)}\n`;
+                    report += `   Primary concern: ${primaryConcernDisplay(night.main_concern)}\n`;
+                    report += "\n   Acoustic Conditions for the Night:\n";
+                    Object.entries(nightConditions).forEach(([metric, details]) => {
+                      report += `   • ${metric.padEnd(20)} ${details}\n`;
+                    });
+                    report += `\n   Acoustic Conditions at Best Hour (${fmtTime(night.best_time)}):\n`;
+                    Object.entries(night.best_condition_score.factors).filter(([factor]) => factor !== "Insect Noise").forEach(([factor, [score, explanation]]) => {
+                      report += `   • ${factor.padEnd(20)} ${formatScore10(score).padStart(6)} - ${explanation}\n`;
+                    });
+                  });
+            
+                  if (historicalNights.length) {
+                    report += `\n${"=".repeat(78)}\n`;
+                    report += "OBSERVED CONDITIONS (Previous 3 Night Windows)\n";
+                    report += `${"=".repeat(78)}\n`;
+                    historicalNights.forEach((night, i) => {
+                      const labelText = stripQualityQualifier(recommendationLinesForNight(night, true));
+                      const nightConditions = summarizeNightConditions(night);
+                      report += `\n${i + 1}. ${historicalNightLabel(i + 1)}: ${fmtDateTime(night.twilight_start)} (Dusk hour) → ${fmtDateTime(night.twilight_end)} (Dawn hour)\n`;
+                      report += `   ${labelText}\n`;
+                      report += `   Acoustic Quality Score: ${formatScore10(night.average_score)}\n`;
+                      report += `   Quality Expectation: ${recommendationFlag(night.average_score)}\n`;
+                      report += `   Best Hour: ${fmtTime(night.best_time)}\n`;
+                      report += `   Primary concern: ${primaryConcernDisplay(night.main_concern)}\n`;
+                      report += "\n   Acoustic Conditions for the Night:\n";
+                      Object.entries(nightConditions).forEach(([metric, details]) => {
+                        report += `   • ${metric.padEnd(20)} ${details}\n`;
+                      });
+                      report += `\n   Acoustic Conditions at Best Hour (${fmtTime(night.best_time)}):\n`;
+                      Object.entries(night.best_condition_score.factors).filter(([factor]) => factor !== "Insect Noise").forEach(([factor, [score, explanation]]) => {
+                        report += `   • ${factor.padEnd(20)} ${formatScore10(score).padStart(6)} - ${explanation}\n`;
+                      });
+                    });
+                  }
+            
+                  report += `\n${"=".repeat(78)}\n`;
+                  report += "APPENDIX: METHOD + CUSTOMIZATION\n";
+                  report += `${"=".repeat(78)}\n`;
+                  report += "Data notes:\n";
+                  report += "  • Timezone can be automatically detected from coordinates\n";
+                  report += "  • 10 m wind is API model output; ground wind is derived estimate (~2 m height)\n";
+                  report += "  • Visibility uses API hourly visibility when available; otherwise estimated fallback\n";
+                  report += "  • Night windows are based on astronomical dusk-to-dawn hour bounds\n";
+                  report += "  • Pressure wording: 'steady' = small net change; 'very stable' = small total range\n";
+                  report += "  • Foliage noise is set by the user; use a higher setting when leafed-out trees are close to the recorder\n";
+                  report += "  • Precipitation weighting scales dynamically: heavier rain → higher weight\n";
+                  report += "  • TXT and JSON reports are generated in the browser and not uploaded anywhere\n";
+                  report += "  • Optional human-made noise context is separate from the weighted acoustic score\n";
+                  report += "  • Road traffic context uses nearby OpenStreetMap motorway/trunk/primary roads, road class, distance, wind direction, and that night’s calm/humid/stable conditions\n";
+                  report += "  • Aircraft context uses nearby mapped or built-in major airports and mapped runway alignment; it does not use live or scheduled flight data\n";
+                  report += "  • 'Could not check' means the lookup service failed, timed out, or returned incomplete data, not that the site is quiet\n\n";
+                  report += `Scoring model version: ${MODEL_VERSION}\n\n`;
+                  report += "Base Factor Weighting (dynamically adjusted):\n";
+                  Object.entries(BASE_SCORING_WEIGHTS).forEach(([factor, weight]) => {
+                    report += `  • ${factor.padEnd(20)} ${(weight * 100).toFixed(0)}% - ${weightRationale[factor] || ""}\n`;
+                  });
+                  report += "\nDynamic Adjustments:\n";
+                  report += "  • Precipitation: Weight scales from 0.18 (drizzle) to 0.45 (heavy rain)\n";                  report += `  • Wind (foliage): Current UI penalty multiplier ×${Number(activeFoliageWindWeightMultiplier).toFixed(2)}; applied based on the user-selected site context
+`;
+                  report += "  • Temperature, Humidity, Cloud Cover: Calibrated to seasonal expectations\n";
+                  return report;
+                }
+            
+                function splitQualityExpectation(text) {
+                  const match = String(text).match(/^(.*?)(\s+(Primary factor|Main concerns|Dominant issues):\s+.*)$/);
+                  if (!match) return { expectation: String(text), qualifier: "" };
+                  return { expectation: match[1], qualifier: match[2].trim() };
+                }
+
+                function formatQualityExpectationHtml(text) {
+                  const parts = String(text).split(/\s+[–-]\s+/, 2);
+                  if (parts.length < 2) return `<strong>${escapeHtml(text)}</strong>`;
+                  const descriptor = parts[0];
+                  const remainder = String(text).slice(String(text).indexOf(parts[1]));
+                  return `<strong>${escapeHtml(descriptor)}</strong> – ${escapeHtml(remainder)}`;
+                }
+            
+                function renderNightCard(night) {
+                  const qualityClass = qualityClassFromScore(night.average_score_100);
+                  const isObserved = night.type === "historical";
+                  const qualityParts = splitQualityExpectation(night.quality_expectation);
+                  const card = document.createElement("article");
+                  card.className = `card night-card${isObserved ? " observed-card" : ""}`;
+                  card.innerHTML = `
+                    <div class="badge-row">
+                      <span class="badge ${qualityClass}">Quality: ${escapeHtml(recommendationFlag(night.average_score_100))}</span>
+                    </div>
+                    <h3>${escapeHtml(night.label)}</h3>
+                    <div class="score">${escapeHtml(night.average_score_10.toFixed(1))}/10</div>
+                    <table>
+                      <tbody>
+                        <tr><th>Nocturnal Hours</th><td>${escapeHtml(night.twilight_start.replace("T", " "))} → ${escapeHtml(night.twilight_end.replace("T", " "))}</td></tr>
+                        <tr><th>Expectation</th><td>${formatQualityExpectationHtml(qualityParts.expectation)}</td></tr>
+                        <tr><th>Best Hour</th><td>${escapeHtml(night.best_time)}</td></tr>
+                        <tr><th>Primary Concern</th><td>${escapeHtml(primaryConcernDisplay(night.main_concern))}</td></tr>
+                        <tr><th>ID Cautions</th><td>${escapeHtml(night.id_expectation)}</td></tr>
+                        ${night.human_noise_context ? `<tr><th>Human-made noise</th><td>${escapeHtml(localNoiseContextSummary(night.human_noise_context))}</td></tr>` : ""}
+                      </tbody>
+                    </table>
+                    <details>
+                      <summary>Night conditions</summary>
+                      <table>
+                        <tbody>${Object.entries(night.night_conditions_summary).map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join("")}</tbody>
+                      </table>
+                    </details>
+                    <details>
+                      <summary>Best-hour factor scores</summary>
+                      <table>
+                        <thead><tr><th>Factor</th><th>Score</th><th>Explanation</th></tr></thead>
+                        <tbody>${Object.entries(night.best_hour_factor_scores).filter(([k]) => k !== "Insect Noise").map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v.score_10.toFixed(1))}/10</td><td>${escapeHtml(v.explanation)}</td></tr>`).join("")}</tbody>
+                      </table>
+                    </details>
+                  `;
+                  return card;
+                }
+            
+                function renderNightColumns(container, nights) {
+                  container.innerHTML = "";
+                  const columnCount = Math.min(3, Math.max(1, nights.length));
+                  const columns = Array.from({ length: columnCount }, () => {
+                    const col = document.createElement("div");
+                    col.className = "summary-column";
+                    container.appendChild(col);
+                    return col;
+                  });
+
+                  nights.forEach((night, i) => {
+                    columns[i % columnCount].appendChild(renderNightCard(night));
+                  });
+                }
+
+                function renderSummary(structured) {
+                  renderNightColumns(els.forecastSummary, structured.forecast_nights);
+                  renderNightColumns(els.observedSummary, structured.historical_nights);
+            
+                  els.forecastSection.hidden = structured.forecast_nights.length === 0;
+                  els.observedSection.hidden = structured.historical_nights.length === 0;
+                }
+            
+                function escapeHtml(s) {
+                  return String(s).replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
+                }
+            
+                function sanitizeFilename(text) {
+                  return text.replace(/[<>:"/\\|?*]+/g, "-").replace(/\s+/g, " ").trim().replace(/^\.+|\.+$/g, "") || "NFC acoustic forecast";
+                }
+            
+                function buildOutputBasename(lat, lon, regionName, forecastNights) {
+                  const first = forecastNights[0]?.twilight_start ? dateIso(forecastNights[0].twilight_start) : dateIso(new Date());
+                  return sanitizeFilename(`Acoustic forecast - ${regionName || `${lat.toFixed(4)}, ${lon.toFixed(4)}`} - ${first}`);
+                }
+            
+                function downloadFile(filename, content, type) {
+                  const blob = new Blob([content], { type });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = filename;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                }
+            
+                async function runForecast() {
+                  const lat = Number(els.lat.value);
+                  const lon = Number(els.lon.value);
+                  const forecastDays = Number(els.forecastDays.value);
+                  activeFoliageWindWeightMultiplier = Number(els.foliageWeight.value) || 1.0;
+                  activeInsectNoiseLevel = els.insectNoise.value || "low";
+                  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+                    setStatus("Enter valid latitude and longitude values.");
+                    return;
+                  }
+                  const processStart = performance.now();
+                  els.runBtn.disabled = true;
+                  els.downloadTxtBtn.disabled = true;
+                  els.downloadJsonBtn.disabled = true;
+                  els.forecastSummary.innerHTML = "";
+                  els.observedSummary.innerHTML = "";
+                  els.forecastSection.hidden = true;
+                  els.observedSection.hidden = true;
+                  els.locationResolved.textContent = "";
+                  els.detailSection.style.display = "none";
+                  setStatus("Fetching timezone, region name, forecast, historical weather, and twilight windows...");
+                  try {
+                    twilightCache.clear();
+                    nightWindowCache.clear();
+                    const [timezone, regionName] = await Promise.all([
+                      detectTimezoneName(lat, lon, els.tz.value),
+                      detectRegionName(lat, lon),
+                    ]);
+                    els.tz.value = timezone;
+                    els.locationResolved.textContent = `Region: ${regionName}`;
+                    const [forecastMetrics, historicalMetrics] = await Promise.all([
+                      fetchForecast(lat, lon, timezone, forecastDays),
+                      fetchHistorical(lat, lon, timezone, 3),
+                    ]);
+                    setStatus("Scoring night windows...");
+                    const forecastNights = await getBestNights(lat, lon, forecastMetrics, forecastDays);
+                    const historicalNights = await getHistoricalNights(lat, lon, historicalMetrics, 3);
+                    let localNoiseResources = null;
+                    if (els.includeHumanNoise.checked) {
+                      setStatus("Checking nearby roads, airports, and runway corridors", true);
+                      localNoiseResources = await fetchLocalNoiseResources(lat, lon);
+                    }
+                    lastStructured = generateStructuredOutput(lat, lon, timezone, regionName, forecastNights, historicalNights, localNoiseResources);
+                    lastReport = generateReport(lat, lon, timezone, regionName, forecastNights, historicalNights, localNoiseResources);
+                    lastBaseName = buildOutputBasename(lat, lon, regionName, forecastNights);
+                    renderSummary(lastStructured);
+                    els.reportText.textContent = lastReport;
+                    els.detailSection.style.display = "block";
+                    els.downloadTxtBtn.disabled = false;
+                    els.downloadJsonBtn.disabled = false;
+                    const elapsedSecs = ((performance.now() - processStart) / 1000).toFixed(1);
+                    setStatus(`Done (took ${elapsedSecs} secs). Generated ${pluralizeNightCount(forecastNights.length, "forecast")} and ${pluralizeNightCount(historicalNights.length, "observed")}${els.includeHumanNoise.checked ? " with human-made noise context" : ""}.`);
+                  } catch (err) {
+                    console.error(err);
+                    setStatus(`Error: ${err.message}. If this is a browser CORS or privacy-blocking issue, try another browser or host the file on a simple static web server.`);
+                  } finally {
+                    els.runBtn.disabled = false;
+                  }
+                }
+            
+
+                let locationMap = null;
+                let locationMarker = null;
+
+                function recorderPopupHtml(lat, lon) {
+                  return `Recorder location<br><span class="muted">(${Number(lat).toFixed(7)}, ${Number(lon).toFixed(7)})</span>`;
+                }
+
+                function refreshRecorderPopup(lat, lon, open = false) {
+                  if (!locationMarker) return;
+                  const html = recorderPopupHtml(lat, lon);
+                  if (locationMarker.getPopup()) {
+                    locationMarker.setPopupContent(html);
+                  } else {
+                    locationMarker.bindPopup(html);
+                  }
+                  if (open) locationMarker.openPopup();
+                }
+
+                function updateMapFromInputs() {
+                  if (!locationMap || !locationMarker) return;
+                  const lat = parseFloat(els.lat.value);
+                  const lon = parseFloat(els.lon.value);
+                  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+                  const ll = [lat, lon];
+                  locationMarker.setLatLng(ll);
+                  locationMap.setView(ll, locationMap.getZoom());
+                  refreshRecorderPopup(lat, lon, true);
+                }
+
+                function setInputsFromMap(lat, lon) {
+                  els.lat.value = Number(lat).toFixed(6);
+                  els.lon.value = Number(lon).toFixed(6);
+                  if (locationMarker) locationMarker.setLatLng([lat, lon]);
+                  refreshRecorderPopup(lat, lon, true);
+                }
+
+                function initLocationMap() {
+                  if (!window.L || !els.locationMap) return;
+                  const lat = parseFloat(els.lat.value) || 42.4206345;
+                  const lon = parseFloat(els.lon.value) || -71.1804986;
+                  locationMap = L.map(els.locationMap).setView([lat, lon], 12);
+                  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+                    maxZoom: 20,
+                    subdomains: "abcd",
+                    attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+                  }).addTo(locationMap);
+                  locationMarker = L.marker([lat, lon], { draggable: true }).addTo(locationMap);
+                  refreshRecorderPopup(lat, lon, true);
+                  locationMap.on("click", e => setInputsFromMap(e.latlng.lat, e.latlng.lng));
+                  locationMarker.on("drag", e => {
+                    const ll = e.target.getLatLng();
+                    els.lat.value = Number(ll.lat).toFixed(6);
+                    els.lon.value = Number(ll.lng).toFixed(6);
+                    refreshRecorderPopup(ll.lat, ll.lng, true);
+                  });
+                  locationMarker.on("dragend", e => {
+                    const ll = e.target.getLatLng();
+                    setInputsFromMap(ll.lat, ll.lng);
+                  });
+                  els.lat.addEventListener("change", updateMapFromInputs);
+                  els.lon.addEventListener("change", updateMapFromInputs);
+                  setTimeout(() => locationMap.invalidateSize(), 0);
+                }
+
+                initLocationMap();
+
+                els.runBtn.addEventListener("click", runForecast);
+                els.downloadTxtBtn.addEventListener("click", () => downloadFile(`${lastBaseName}.txt`, lastReport, "text/plain;charset=utf-8"));
+                els.downloadJsonBtn.addEventListener("click", () => downloadFile(`${lastBaseName}.json`, JSON.stringify(lastStructured, null, 2), "application/json;charset=utf-8"));
+              </script>
+            </body>
+            </html>
