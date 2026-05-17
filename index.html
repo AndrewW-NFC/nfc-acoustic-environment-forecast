@@ -438,7 +438,7 @@
         <input id="includeHumanNoise" type="checkbox" />
         <div>
           <label for="includeHumanNoise">Check human-made noise context</label>
-          <p class="muted">Not weighted in score. Estimates whether traffic or aircraft noise may carry in the direction of the recorder from nearby roads and runway corridors. May add 30+ seconds to forecast processing.</p>
+          <p class="muted">Not weighted in score. Suggests to what extent traffic or aircraft noise may carry in the direction of the recorder from nearby roads and runway corridors.</p>
         </div>
       </div>
       <div class="actions" style="margin-top: 1rem;">
@@ -479,13 +479,13 @@
         <li><strong>Aircraft:</strong> Aircraft context is estimated from nearby mapped or built-in major airports and mapped runway alignment. It does not use live or scheduled flight data.</li>
         <li><strong>“Could not check”:</strong> This means the lookup service failed, timed out, or returned incomplete data. It does not mean the site is quiet.</li>
       </ul>
-      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version web-2.1.28-fixed-v52</p>
+      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version 2.1</p>
     </section>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const MODEL_VERSION = "web-2.1.28-fixed-v52";
+    const MODEL_VERSION = "2.1";
 
     // ============================================================================
     // CUSTOMIZATION: Acoustic environment scoring baselines
