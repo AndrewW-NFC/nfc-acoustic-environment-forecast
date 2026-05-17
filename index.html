@@ -479,13 +479,13 @@
         <li><strong>Aircraft:</strong> Aircraft context is estimated from nearby mapped or built-in major airports and mapped runway alignment. It does not use live or scheduled flight data.</li>
         <li><strong>“Could not check”:</strong> This means the lookup service failed, timed out, or returned incomplete data. It does not mean the site is quiet.</li>
       </ul>
-      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a></p>
+      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version web-2.1.28-fixed-v52</p>
     </section>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const MODEL_VERSION = "web-2.1.26-copy-update";
+    const MODEL_VERSION = "web-2.1.28-fixed-v52";
 
     // ============================================================================
     // CUSTOMIZATION: Acoustic environment scoring baselines
@@ -1702,23 +1702,34 @@
                 async function fetchNearbyHighways(lat, lon, radiusM = 8000) {
                   const radii = [1500, 3000, radiusM, 12000];
                   let lastError = null;
+                  let hadSuccessfulLookup = false;
+
                   for (const r of radii) {
                     try {
                       // Fast road check: request only way centers, not full geometries.
                       // Full OSM road geometries are often large enough to time out in
                       // browsers. The center-point method is approximate, but it is much
                       // more reliable for this optional context check.
+                      // If one radius succeeds and finds no qualifying roads, do not let
+                      // a later wider-radius timeout convert the whole road check to
+                      // "Could not check." That outcome should be reserved for cases
+                      // where every attempted Overpass lookup fails.
                       const query = `[out:json][timeout:10];(way(around:${r},${lat},${lon})["highway"~"^(motorway|trunk|primary)$"];);out tags center 25;`;
                       const data = await fetchOverpass(query);
+                      hadSuccessfulLookup = true;
+
                       const results = (data.elements || []).map(el => {
                         const c = closestPointOnFeature(lat, lon, el);
                         return c ? { ...c, name: el.tags?.name || el.tags?.ref || "unnamed road", road_class: el.tags?.highway || "road", distance_is_approximate: true } : null;
                       }).filter(Boolean).sort((a, b) => a.distance_mi - b.distance_mi);
+
                       if (results.length) return results;
                     } catch (err) {
                       lastError = err;
                     }
                   }
+
+                  if (hadSuccessfulLookup) return [];
                   if (lastError) throw lastError;
                   return [];
                 }
