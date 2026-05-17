@@ -60,6 +60,7 @@
 
     h2 { margin: 0 0 1rem; }
     h3 { margin: .25rem 0 .75rem; }
+    .settings-heading { margin: 1.25rem 0 .65rem; font-size: 1.15rem; }
     p { margin: .5rem 0; }
     .lede { max-width: 820px; color: var(--muted); font-size: 1.05rem; }
 
@@ -75,7 +76,7 @@
     }
 
     .controls {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       align-items: start;
       margin-bottom: 1rem;
     }
@@ -403,23 +404,16 @@
           <input id="timezone" type="text" value="auto" aria-describedby="tzHelp" />
           <p id="tzHelp" class="muted">Use <strong>auto</strong> or an IANA value such as America/New_York.</p>
         </div>
-        <div>
-          <label for="forecastDays">Forecast nights</label>
-          <select id="forecastDays">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3" selected>3</option>
-          </select>
-        </div>
       </div>
       <div class="map-wrap">
         <label for="locationMap">Map-selected location</label>
         <div id="locationMap" role="application" aria-label="Click map to set latitude and longitude"></div>
         <p class="muted">Click the map or drag the marker to select latitude and longitude. Requires an internet connection.</p>
       </div>
+      <h2 class="settings-heading">Local noise settings</h2>
       <div class="foliage-controls">
         <div>
-          <label for="foliageWeight">Foliage noise</label>
+          <label for="foliageWeight">Foliage</label>
           <select id="foliageWeight" aria-describedby="foliageHelp">
             <option value="1.00">Minimal / open site</option>
             <option value="1.15">Light / sparse trees</option>
@@ -431,7 +425,7 @@
       </div>
       <div class="foliage-controls">
         <div>
-          <label for="insectNoise">Insect noise</label>
+          <label for="insectNoise">Insects</label>
           <select id="insectNoise" aria-describedby="insectHelp">
             <option value="low" selected>Low / not noticeable</option>
             <option value="moderate">Moderate / audible insects</option>
@@ -444,7 +438,7 @@
         <input id="includeHumanNoise" type="checkbox" />
         <div>
           <label for="includeHumanNoise">Check human-made noise context</label>
-          <p class="muted">Not weighted in score. Estimates whether nearby major roads and runway corridors may carry traffic or aircraft noise in the direction of the recorder. May add 30+ seconds to forecast processing.</p>
+          <p class="muted">Not weighted in score. Estimates whether traffic or aircraft noise may carry in the direction of the recorder from nearby roads and runway corridors. May add 30+ seconds to forecast processing.</p>
         </div>
       </div>
       <div class="actions" style="margin-top: 1rem;">
@@ -481,16 +475,17 @@
         <li><strong>Foliage:</strong> Foliage noise is set by the user. Use a higher setting when leafed-out trees are close to the recorder.</li>
         <li><strong>Insects:</strong> Insect noise is included in the weighted score when selected because some insect bands and pulses can overlap nocturnal flight-call frequencies and mask NFC structure on the spectrogram.</li>
         <li><strong>Human-made noise:</strong> Road and aircraft context is shown separately from the weighted score because actual source strength varies by traffic volume, flight activity, pavement conditions, and other factors the tool cannot directly measure.</li>
-        <li><strong>Road traffic:</strong> Road traffic is estimated from nearby OpenStreetMap roads tagged motorway, trunk, or primary; distance to the selected point; road class; wind direction; and that night’s calm, humid, stable conditions.</li>
+        <li><strong>Road traffic:</strong> Road traffic is estimated from nearby OpenStreetMap roads tagged motorway, trunk, or primary; approximate distance to the selected point; road class; wind direction; and that night’s calm, humid, stable conditions.</li>
         <li><strong>Aircraft:</strong> Aircraft context is estimated from nearby mapped or built-in major airports and mapped runway alignment. It does not use live or scheduled flight data.</li>
         <li><strong>“Could not check”:</strong> This means the lookup service failed, timed out, or returned incomplete data. It does not mean the site is quiet.</li>
       </ul>
+      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a></p>
     </section>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const MODEL_VERSION = "web-2.1.18-nocturnal-hours";
+    const MODEL_VERSION = "web-2.1.26-copy-update";
 
     // ============================================================================
     // CUSTOMIZATION: Acoustic environment scoring baselines
@@ -573,15 +568,15 @@
       "Insect Noise": "insect bands and pulses can overlap NFC frequencies and mask spectrogram structure",
     };
 
-    const mainConcernHint = {
-      "Surface Wind": "wind noise masking",
-      "Precipitation": "rain noise masking",
-      "Humidity": "high-frequency absorption",
-      "Visibility": "atmospheric attenuation",
-      "Cloud Cover": "less favorable sound confinement",
-      "Pressure": "atmospheric instability may scatter distant calls",
-      "Temperature": "mixing and stability concerns",
-      "Insect Noise": "insect noise may mask NFC structure",
+    const mainConcernLabel = {
+      "Surface Wind": "Surface wind noise",
+      "Precipitation": "Precipitation noise",
+      "Humidity": "Humidity (absorption of higher frequencies)",
+      "Visibility": "Visibility (haze/fog may reduce distant calls)",
+      "Cloud Cover": "Cloud cover (clear skies may reduce sound confinement)",
+      "Pressure": "Pressure (atmospheric instability may scatter distant calls)",
+      "Temperature": "Temperature (uneven cooling may blur distant calls)",
+      "Insect Noise": "Insect noise (sounds may mask NFC structure)",
     };
 
     const referenceWindHeightM = 10.0;
@@ -598,7 +593,6 @@
       lat: document.getElementById("latitude"),
       lon: document.getElementById("longitude"),
       tz: document.getElementById("timezone"),
-      forecastDays: document.getElementById("forecastDays"),
       foliageWeight: document.getElementById("foliageWeight"),
       insectNoise: document.getElementById("insectNoise"),
       includeHumanNoise: document.getElementById("includeHumanNoise"),
@@ -1096,12 +1090,12 @@
           function scoreHumidity(h) {
             const ideal = SEASONAL_CONFIG.expected_avg_humidity;
             const range = 8;
-            if (Math.abs(h - ideal) < 3) return [88, `Optimal humidity (${h}% RH)`];
-            if (Math.abs(h - ideal) < range) return [78, `Good humidity (${h}% RH)`];
-            if (68 <= h && h <= 85) return [72, `Acceptable humidity (${h}% RH)`];
-            if (85 < h && h <= 92) return [58, `Humid (${h}% RH)`];
-            if (h > 92) return [35, `Very humid (${h}% RH)`];
-            return [50, `Dry (${h}% RH)`];
+            if (Math.abs(h - ideal) < 3) return [88, `Optimal humidity (${h}% relative humidity)`];
+            if (Math.abs(h - ideal) < range) return [78, `Good humidity (${h}% relative humidity)`];
+            if (68 <= h && h <= 85) return [72, `Acceptable humidity (${h}% relative humidity)`];
+            if (85 < h && h <= 92) return [58, `Humid (${h}% relative humidity)`];
+            if (h > 92) return [35, `Very humid (${h}% relative humidity)`];
+            return [50, `Dry (${h}% relative humidity)`];
           }
           
           function scoreVisibility(v) {
@@ -1340,7 +1334,7 @@
               : `Going from ${cloudLabels[0]} to ${cloudLabels[cloudLabels.length - 1]}${countTransitions(cloudLabels) >= 2 ? " (variable in between)" : ""}`;
             return {
               "Surface Wind": `${windMicNoiseDescriptor(windMph, gustMph)}: ${formatRange(windMph, 1)} mph (max gust ${Math.max(...gustMph).toFixed(1)} mph)`,
-              "Humidity": `${humiditySpan} (${formatRange(humidityVals, 0)}% RH)`,
+              "Humidity": `${humiditySpan} (${formatRange(humidityVals, 0)}% relative humidity)`,
               "Visibility": `${visDesc} (${formatRange(visMiles, 1)} mi); ${visTip}`,
               "Cloud Cover": `${cloudDesc} (${formatRange(cloudVals, 0)}%)`,
               "Pressure": pressureDescription(pressureVals),
@@ -1373,7 +1367,7 @@
             const penalties = {};
             for (const k of Object.keys(BASE_SCORING_WEIGHTS)) penalties[k] = (100 - fa[k]) * (weights[k] ?? BASE_SCORING_WEIGHTS[k] ?? 0);
             const worst = Object.keys(penalties).sort((a, b) => penalties[b] - penalties[a])[0];
-            return `${worst} (${mainConcernHint[worst] || "primary risk"})`;
+            return mainConcernLabel[worst] || `${worst} (primary risk)`;
           }
           
           function peakWindow(night, margin = 5) {
@@ -1676,7 +1670,7 @@
                   for (const endpoint of OVERPASS_ENDPOINTS) {
                     try {
                       const controller = new AbortController();
-                      const timer = setTimeout(() => controller.abort(), 28000);
+                      const timer = setTimeout(() => controller.abort(), 10000);
                       const res = await fetch(endpoint, {
                         method: "POST",
                         headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
@@ -1692,7 +1686,7 @@
                         const u = new URL(endpoint);
                         u.searchParams.set("data", query);
                         const controller = new AbortController();
-                        const timer = setTimeout(() => controller.abort(), 28000);
+                        const timer = setTimeout(() => controller.abort(), 10000);
                         const res = await fetch(u.toString(), { method: "GET", signal: controller.signal });
                         clearTimeout(timer);
                         if (!res.ok) throw new Error(`Overpass ${res.status}: ${res.statusText}`);
@@ -1706,19 +1700,19 @@
                 }
 
                 async function fetchNearbyHighways(lat, lon, radiusM = 8000) {
-                  const radii = [3000, radiusM, 12000];
+                  const radii = [1500, 3000, radiusM, 12000];
                   let lastError = null;
                   for (const r of radii) {
                     try {
-                      const b = boundingBoxAround(lat, lon, r);
-                      // Clip returned geometry to the local bounding box. Without this,
-                      // Overpass may return long highway geometries that are slow enough
-                      // to time out, producing a misleading "Could not check" result.
-                      const query = `[out:json][timeout:18];(way(around:${r},${lat},${lon})["highway"~"^(motorway|trunk|primary)$"];);out tags geom(${b.south},${b.west},${b.north},${b.east});`;
+                      // Fast road check: request only way centers, not full geometries.
+                      // Full OSM road geometries are often large enough to time out in
+                      // browsers. The center-point method is approximate, but it is much
+                      // more reliable for this optional context check.
+                      const query = `[out:json][timeout:10];(way(around:${r},${lat},${lon})["highway"~"^(motorway|trunk|primary)$"];);out tags center 25;`;
                       const data = await fetchOverpass(query);
                       const results = (data.elements || []).map(el => {
                         const c = closestPointOnFeature(lat, lon, el);
-                        return c ? { ...c, name: el.tags?.name || el.tags?.ref || "unnamed road", road_class: el.tags?.highway || "road" } : null;
+                        return c ? { ...c, name: el.tags?.name || el.tags?.ref || "unnamed road", road_class: el.tags?.highway || "road", distance_is_approximate: true } : null;
                       }).filter(Boolean).sort((a, b) => a.distance_mi - b.distance_mi);
                       if (results.length) return results;
                     } catch (err) {
@@ -1850,13 +1844,14 @@
                   if (upwind) points += 2;
                   const risk = highwayNoiseLabelFromPoints(points);
                   const direction = `${compassDirection(nearest.bearing_deg)} of site`;
+                  const distanceNote = nearest.distance_is_approximate ? "about " : "";
                   const windNote = propagation.wind_direction_deg == null ? "wind direction unavailable" : upwind ? `wind from ${propagation.wind_direction_compass} may carry traffic noise toward the recorder` : `wind from ${propagation.wind_direction_compass} does not put the nearest major road directly upwind`;
                   const roadLabel = roadClassPlainLabel(nearest.road_class);
                   return {
                     risk,
                     points,
                     nearest,
-                    summary: `${nearest.name} is a ${roadLabel} ${nearest.distance_mi.toFixed(1)} mi ${direction}; ${windNote}. ${propagation.summary}`,
+                    summary: `${nearest.name} is a ${roadLabel} ${distanceNote}${nearest.distance_mi.toFixed(1)} mi ${direction}; ${windNote}. ${propagation.summary}`,
                   };
                 }
 
@@ -1895,25 +1890,29 @@
 
                 async function fetchLocalNoiseResources(lat, lon) {
                   const resources = { highways: [], airportData: { airports: [], runways: [] }, warnings: [] };
+                  const [highwayResult, airportResult] = await Promise.allSettled([
+                    fetchNearbyHighways(lat, lon),
+                    fetchNearbyAirportsAndRunways(lat, lon),
+                  ]);
 
-                  try {
-                    resources.highways = await fetchNearbyHighways(lat, lon);
-                  } catch (err) {
-                    console.warn("Highway lookup failed", err);
+                  if (highwayResult.status === "fulfilled") {
+                    resources.highways = highwayResult.value;
+                  } else {
+                    console.warn("Highway lookup failed", highwayResult.reason);
                     resources.highways = null;
-                    resources.warnings.push(`Highway lookup: ${String(err.message || err)}`);
+                    resources.warnings.push(`Highway lookup: ${String(highwayResult.reason?.message || highwayResult.reason)}`);
                   }
 
-                  try {
-                    resources.airportData = await fetchNearbyAirportsAndRunways(lat, lon);
-                  } catch (err) {
-                    console.warn("Airport lookup failed", err);
+                  if (airportResult.status === "fulfilled") {
+                    resources.airportData = airportResult.value;
+                  } else {
+                    console.warn("Airport lookup failed", airportResult.reason);
                     const fallbackAirports = builtInAirportsNear(lat, lon, 35000);
                     resources.airportData = { airports: fallbackAirports, runways: [] };
                     if (fallbackAirports.length) {
-                      resources.warnings.push(`Airport lookup used built-in fallback: ${String(err.message || err)}`);
+                      resources.warnings.push(`Airport lookup used built-in fallback: ${String(airportResult.reason?.message || airportResult.reason)}`);
                     } else {
-                      resources.warnings.push(`Airport lookup: ${String(err.message || err)}`);
+                      resources.warnings.push(`Airport lookup: ${String(airportResult.reason?.message || airportResult.reason)}`);
                     }
                   }
                   return resources;
@@ -1952,14 +1951,14 @@
                   const highwayRisk = humanNoiseLabel(context.highway?.risk, "road");
                   const airportRisk = humanNoiseLabel(context.airport?.risk, "aircraft");
                   const propagation = context.propagation?.level ? sentenceCase(context.propagation.level) : "Could not assess";
-                  return `Carrying road noise: ${highwayRisk}. Carrying aircraft noise: ${airportRisk}.`;
+                  return `Road noise pickup: ${highwayRisk}. Aircraft noise pickup: ${airportRisk}.`;
                 }
 
                 function localNoiseContextDetails(context) {
                   if (!context) return [];
                   return [
-                    ["Carrying road noise", humanNoiseLabel(context.highway?.risk, "road"), context.highway?.summary || "Could not check nearby major-road context."],
-                    ["Carrying aircraft noise", humanNoiseLabel(context.airport?.risk, "aircraft"), context.airport?.summary || "Could not check nearby airport context."],
+                    ["Road noise pickup", humanNoiseLabel(context.highway?.risk, "road"), context.highway?.summary || "Could not check nearby major-road context."],
+                    ["Aircraft noise pickup", humanNoiseLabel(context.airport?.risk, "aircraft"), context.airport?.summary || "Could not check nearby airport context."],
                   ];
                 }
 
@@ -2158,7 +2157,7 @@
                 async function runForecast() {
                   const lat = Number(els.lat.value);
                   const lon = Number(els.lon.value);
-                  const forecastDays = Number(els.forecastDays.value);
+                  const forecastDays = 3;
                   activeFoliageWindWeightMultiplier = Number(els.foliageWeight.value) || 1.0;
                   activeInsectNoiseLevel = els.insectNoise.value || "low";
                   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
