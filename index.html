@@ -479,13 +479,13 @@
         <li><strong>Aircraft:</strong> Aircraft context is estimated from nearby mapped or built-in major airports and mapped runway alignment. It does not use live or scheduled flight data.</li>
         <li><strong>“Could not check”:</strong> This means the lookup service failed, timed out, or returned incomplete data. It does not mean the site is quiet.</li>
       </ul>
-      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version 2.1</p>
+      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version 2.1.1</p>
     </section>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const MODEL_VERSION = "2.1";
+    const MODEL_VERSION = "2.1.1";
 
     // ============================================================================
     // CUSTOMIZATION: Acoustic environment scoring baselines
@@ -2196,7 +2196,7 @@
                     els.tz.value = timezone;
                     els.locationResolved.textContent = `Region: ${regionName}`;
                     const [forecastMetrics, historicalMetrics] = await Promise.all([
-                      fetchForecast(lat, lon, timezone, forecastDays),
+                      fetchForecast(lat, lon, timezone, forecastDays + 1),
                       fetchHistorical(lat, lon, timezone, 3),
                     ]);
                     setStatus("Scoring night windows...");
