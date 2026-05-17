@@ -479,13 +479,13 @@
         <li><strong>Aircraft:</strong> Aircraft context is estimated from nearby mapped or built-in major airports and mapped runway alignment. It does not use live or scheduled flight data.</li>
         <li><strong>“Could not check”:</strong> This means the lookup service failed, timed out, or returned incomplete data. It does not mean the site is quiet.</li>
       </ul>
-      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version 2.1.1</p>
+      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version 2.1.2</p>
     </section>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const MODEL_VERSION = "2.1.1";
+    const MODEL_VERSION = "2.1.2";
 
     // ============================================================================
     // CUSTOMIZATION: Acoustic environment scoring baselines
@@ -630,6 +630,33 @@
       const [y, m, day] = d.split("-").map(Number);
       const [hh, mm] = t.split(":").map(Number);
       return new Date(y, m - 1, day, hh, mm || 0, 0, 0);
+    }
+
+    function instantToZonedLocalDate(instant, timezone) {
+      // Return a Date object whose wall-clock fields match the requested
+      // timezone. This keeps comparisons consistent with Open-Meteo hourly
+      // timestamps, which are parsed as local wall-clock times.
+      try {
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: timezone,
+          hour12: false,
+          hourCycle: "h23",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }).formatToParts(instant);
+        const get = type => Number(parts.find(p => p.type === type)?.value || 0);
+        return new Date(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"), 0);
+      } catch (_) {
+        return new Date(instant);
+      }
+    }
+
+    function zonedNow(timezone) {
+      return instantToZonedLocalDate(new Date(), timezone);
     }
 
     function addDays(dt, days) {
@@ -796,11 +823,10 @@
       return "quality-unusable";
     }
 
-    function forecastNightLabel(i) {
-      if (i === 1) return "Tonight";
-      if (i === 2) return "Tomorrow Night";
-      if (i === 3) return "Night Three";
-      return `Night ${i}`;
+    const DEFAULT_FORECAST_LABELS = ["Tonight", "Tomorrow Night", "Night Three"];
+
+    function forecastNightLabel(i, labels = DEFAULT_FORECAST_LABELS) {
+      return labels?.[i - 1] || `Night ${i}`;
     }
 
     function historicalNightLabel(i) {
@@ -970,7 +996,7 @@
           }
           
           async function fetchHistorical(lat, lon, timezone, daysBack = 3) {
-            const end = addDays(new Date(), -1);
+            const end = addDays(zonedNow(timezone), -1);
             const start = addDays(end, -(daysBack - 1));
             const params = {
               latitude: lat,
@@ -985,8 +1011,8 @@
           }
           
           const twilightCache = new Map();
-          async function getTwilightForDate(lat, lon, d) {
-            const key = `${lat},${lon},${dateIso(d)}`;
+          async function getTwilightForDate(lat, lon, d, timezone) {
+            const key = `${lat},${lon},${dateIso(d)},${timezone}`;
             if (twilightCache.has(key)) return twilightCache.get(key);
             try {
               const data = await fetchJson("https://api.sunrise-sunset.org/json", {
@@ -996,8 +1022,8 @@
                 formatted: 0,
               });
               if (data.status !== "OK") throw new Error(data.status || "Twilight API failed");
-              const dawn = new Date(data.results.astronomical_twilight_begin);
-              const dusk = new Date(data.results.astronomical_twilight_end);
+              const dawn = instantToZonedLocalDate(new Date(data.results.astronomical_twilight_begin), timezone);
+              const dusk = instantToZonedLocalDate(new Date(data.results.astronomical_twilight_end), timezone);
               const out = { dawn, dusk };
               twilightCache.set(key, out);
               return out;
@@ -1012,11 +1038,11 @@
           }
           
           const nightWindowCache = new Map();
-          async function twilightWindowForEvening(lat, lon, eveningDate) {
-            const key = `${lat},${lon},${dateIso(eveningDate)}`;
+          async function twilightWindowForEvening(lat, lon, eveningDate, timezone) {
+            const key = `${lat},${lon},${dateIso(eveningDate)},${timezone}`;
             if (nightWindowCache.has(key)) return nightWindowCache.get(key);
-            const dusk = (await getTwilightForDate(lat, lon, eveningDate)).dusk;
-            const dawnNext = (await getTwilightForDate(lat, lon, addDays(eveningDate, 1))).dawn;
+            const dusk = (await getTwilightForDate(lat, lon, eveningDate, timezone)).dusk;
+            const dawnNext = (await getTwilightForDate(lat, lon, addDays(eveningDate, 1), timezone)).dawn;
             let start = floorHour(dusk);
             let end = floorHour(dawnNext);
             if (end <= start) end = new Date(eveningDate.getFullYear(), eveningDate.getMonth(), eveningDate.getDate() + 1, 5, 0);
@@ -1025,10 +1051,10 @@
             return out;
           }
           
-          async function metricToNightKey(lat, lon, ts) {
+          async function metricToNightKey(lat, lon, ts, timezone) {
             const candidates = [new Date(ts.getFullYear(), ts.getMonth(), ts.getDate()), addDays(new Date(ts.getFullYear(), ts.getMonth(), ts.getDate()), -1)];
             for (const eve of candidates) {
-              const [start, end] = await twilightWindowForEvening(lat, lon, eve);
+              const [start, end] = await twilightWindowForEvening(lat, lon, eve, timezone);
               if (ts >= start && ts <= end) return dateIso(eve);
             }
             return null;
@@ -1400,10 +1426,10 @@
             return [gaps.length === 0, gaps];
           }
           
-          async function analyzeNightWindows(lat, lon, metrics, reverseChronological = false) {
+          async function analyzeNightWindows(lat, lon, metrics, reverseChronological = false, timezone) {
             const windows = new Map();
             for (const m of metrics) {
-              const key = await metricToNightKey(lat, lon, m.timestamp);
+              const key = await metricToNightKey(lat, lon, m.timestamp, timezone);
               if (key) {
                 if (!windows.has(key)) windows.set(key, []);
                 windows.get(key).push(m);
@@ -1415,7 +1441,7 @@
             for (const key of keys) {
               const [y, mo, da] = key.split("-").map(Number);
               const evening = new Date(y, mo - 1, da);
-              const [twStart, twEnd] = await twilightWindowForEvening(lat, lon, evening);
+              const [twStart, twEnd] = await twilightWindowForEvening(lat, lon, evening, timezone);
               const rows = windows.get(key).filter(w => w.timestamp >= twStart && w.timestamp <= twEnd).sort((a, b) => a.timestamp - b.timestamp);
               if (!rows.length) continue;
               const scored = rows.map(w => ({ time: w.timestamp, score: analyzeForecast(w), weather: w }));
@@ -1449,23 +1475,50 @@
             return nights;
           }
           
-          async function nextEveningAnchor(lat, lon) {
-            const now = new Date();
+          async function forecastWindowContext(lat, lon, timezone) {
+            const now = zonedNow(timezone);
             const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const [tonightStart] = await twilightWindowForEvening(lat, lon, today);
-            if (now < tonightStart) return tonightStart;
-            const [tomorrowStart] = await twilightWindowForEvening(lat, lon, addDays(today, 1));
-            return tomorrowStart;
+            const yesterday = addDays(today, -1);
+            const [yesterdayStart, yesterdayEnd] = await twilightWindowForEvening(lat, lon, yesterday, timezone);
+            const [todayStart, todayEnd] = await twilightWindowForEvening(lat, lon, today, timezone);
+
+            // After local midnight but before the previous evening's night window closes:
+            // show the current tail of that window first, then the coming night later today.
+            if (now >= yesterdayStart && now <= yesterdayEnd) {
+              return {
+                anchor: yesterdayStart,
+                labels: ["Tonight’s Remaining Hours", "This Coming Night", "Night Three"],
+              };
+            }
+
+            // After today's night window has begun, but before it closes the next morning:
+            // keep today's evening-date window first, but acknowledge that only remaining
+            // forecast hours are available.
+            if (now >= todayStart && now <= todayEnd) {
+              return {
+                anchor: todayStart,
+                labels: ["Tonight’s Remaining Hours", "Tomorrow Night", "Night Three"],
+              };
+            }
+
+            return {
+              anchor: todayStart,
+              labels: DEFAULT_FORECAST_LABELS,
+            };
           }
           
-          async function getBestNights(lat, lon, forecasts, daysAhead) {
-            const nights = await analyzeNightWindows(lat, lon, forecasts, false);
-            const anchor = await nextEveningAnchor(lat, lon);
-            return nights.filter(n => n.twilight_start >= anchor).slice(0, daysAhead);
+          async function getBestNights(lat, lon, forecasts, daysAhead, timezone) {
+            const nights = await analyzeNightWindows(lat, lon, forecasts, false, timezone);
+            const context = await forecastWindowContext(lat, lon, timezone);
+            const selected = nights.filter(n => n.twilight_start >= context.anchor).slice(0, daysAhead);
+            selected.forEach((night, i) => {
+              night.forecast_label = forecastNightLabel(i + 1, context.labels);
+            });
+            return selected;
           }
           
-          async function getHistoricalNights(lat, lon, historical, daysBack = 3) {
-            const nights = await analyzeNightWindows(lat, lon, historical, true);
+          async function getHistoricalNights(lat, lon, historical, daysBack = 3, timezone) {
+            const nights = await analyzeNightWindows(lat, lon, historical, true, timezone);
             return nights.slice(0, daysBack);
           }
           
@@ -1573,7 +1626,7 @@
                     weight_rationale: weightRationale,
                     human_noise_method: localNoiseResources ? "Optional. Nearby roads and airports are looked up once; road-traffic and aircraft-noise notes are assessed separately for each night using that night's wind, humidity, pressure, and cloud cover. Road and aircraft context is not included in the weighted acoustic score; insect noise is included when selected." : "Optional human-made noise lookup was not run.",
                     local_noise_warnings: localNoiseResources?.warnings || [],
-                    forecast_nights: forecastNights.map((night, i) => serializeNight(night, forecastNightLabel(i + 1), "forecast", localNoiseResources ? buildNoiseContextForNight(localNoiseResources, night) : null)),
+                    forecast_nights: forecastNights.map((night, i) => serializeNight(night, night.forecast_label || forecastNightLabel(i + 1), "forecast", localNoiseResources ? buildNoiseContextForNight(localNoiseResources, night) : null)),
                     historical_nights: historicalNights.map((night, i) => serializeNight(night, historicalNightLabel(i + 1), "historical", localNoiseResources ? buildNoiseContextForNight(localNoiseResources, night) : null)),
                   };
                 }
@@ -1987,7 +2040,7 @@
                   report += "\nDECISION SUMMARY (Quick Scan)\n";
                   report += `${"-".repeat(78)}\n`;
                   forecastNights.forEach((night, i) => {
-                    report += decisionSummaryLine(forecastNightLabel(i + 1), night) + "\n\n";
+                    report += decisionSummaryLine(night.forecast_label || forecastNightLabel(i + 1), night) + "\n\n";
                   });
             
                   report += `${"=".repeat(78)}\n`;
@@ -1996,7 +2049,7 @@
                   forecastNights.forEach((night, i) => {
                     const labelText = recommendationLinesForNight(night, false);
                     const nightConditions = summarizeNightConditions(night);
-                    report += `\n${i + 1}. ${forecastNightLabel(i + 1)}: ${fmtDateTime(night.twilight_start)} (Dusk hour) → ${fmtDateTime(night.twilight_end)} (Dawn hour)\n`;
+                    report += `\n${i + 1}. ${night.forecast_label || forecastNightLabel(i + 1)}: ${fmtDateTime(night.twilight_start)} (Dusk hour) → ${fmtDateTime(night.twilight_end)} (Dawn hour)\n`;
                     report += `   ${labelText}\n`;
                     report += `   Acoustic Quality Score: ${formatScore10(night.average_score)}\n`;
                     report += `   Quality Expectation: ${recommendationFlag(night.average_score)}\n`;
@@ -2200,8 +2253,8 @@
                       fetchHistorical(lat, lon, timezone, 3),
                     ]);
                     setStatus("Scoring night windows...");
-                    const forecastNights = await getBestNights(lat, lon, forecastMetrics, forecastDays);
-                    const historicalNights = await getHistoricalNights(lat, lon, historicalMetrics, 3);
+                    const forecastNights = await getBestNights(lat, lon, forecastMetrics, forecastDays, timezone);
+                    const historicalNights = await getHistoricalNights(lat, lon, historicalMetrics, 3, timezone);
                     let localNoiseResources = null;
                     if (els.includeHumanNoise.checked) {
                       setStatus("Checking nearby roads, airports, and runway corridors", true);
