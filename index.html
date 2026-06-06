@@ -379,6 +379,40 @@
       font-size: .9rem;
       padding: 1rem 0 2rem;
     }
+    .score-ledger {
+      margin-top: .75rem;
+      padding: .75rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--panel), var(--bg) 38%);
+    }
+
+    .score-ledger strong { font-weight: 900; }
+
+    .scoring-note {
+      margin-top: 1rem;
+      border-top: 1px solid var(--line);
+      padding-top: 1rem;
+    }
+
+    .night-card details {
+      border-top: 0;
+      padding-top: 0;
+      margin-top: .75rem;
+    }
+
+    .night-card .night-conditions-details {
+      border-top: 3px solid var(--line);
+      padding-top: .75rem;
+      margin-top: .75rem;
+    }
+
+
+    .night-card table tbody tr:last-child th,
+    .night-card table tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
   </style>
 </head>
 <body>
@@ -461,31 +495,100 @@
       <div id="observedSummary" class="grid summary"></div>
     </section>
 
-    <section id="detailSection" class="card" style="margin-top: 1rem; display: none;">
-      <h2>Plain-text report</h2>
-      <pre id="reportText"></pre>
+    <section id="historyExportSection" class="card section-block" aria-label="Historical export">
+      <h2>Historical export</h2>
+      <p class="muted">Export nightly acoustic scoring for an evening-date range. Uses Open-Meteo Historical Weather API data; practical browser exports are capped at 366 nights per file.</p>
+      <div class="grid controls">
+        <div>
+          <label for="exportStartDate">Start evening date</label>
+          <input id="exportStartDate" type="date" />
+        </div>
+        <div>
+          <label for="exportEndDate">End evening date</label>
+          <input id="exportEndDate" type="date" />
+        </div>
+        <div>
+          <label for="exportFormat">Export format</label>
+          <select id="exportFormat">
+            <option value="csv" selected>CSV</option>
+            <option value="json">JSON</option>
+          </select>
+        </div>
+      </div>
+      <div class="option-row">
+        <input id="exportHourlyRows" type="checkbox" checked />
+        <div>
+          <label for="exportHourlyRows">Include hourly rows</label>
+          <p class="muted">When unchecked, the export contains only one summary row per night.</p>
+        </div>
+      </div>
+      <div class="actions" style="margin-top: 1rem;">
+        <button class="secondary" id="exportHistoryBtn">Export historical scoring</button>
+      </div>
     </section>
 
     <section class="footer-note" aria-label="Notes">
       <h2>Notes</h2>
-      <ul>
-        <li><strong>Weather data:</strong> 10 m wind is from Open-Meteo. Near-ground wind is estimated from the same profile. Visibility uses API data when available; otherwise, it is estimated from precipitation and cloud cover.</li>
-        <li><strong>Night windows:</strong> Night windows use astronomical twilight from sunrise-sunset.org.</li>
-        <li><strong>Scoring:</strong> The weighted score emphasizes factors that can mask bird calls or reduce visible structure on the spectrogram, including wind noise, precipitation, humidity, visibility, atmospheric stability, foliage noise, and insect noise.</li>
-        <li><strong>Foliage:</strong> Foliage noise is set by the user. Use a higher setting when leafed-out trees are close to the recorder.</li>
-        <li><strong>Insects:</strong> Insect noise is included in the weighted score when selected because some insect bands and pulses can overlap nocturnal flight-call frequencies and mask NFC structure on the spectrogram.</li>
-        <li><strong>Human-made noise:</strong> Road and aircraft context is shown separately from the weighted score because actual source strength varies by traffic volume, flight activity, pavement conditions, and other factors the tool cannot directly measure.</li>
-        <li><strong>Road traffic:</strong> Road traffic is estimated from nearby OpenStreetMap roads tagged motorway, trunk, or primary; approximate distance to the selected point; road class; wind direction; and that night’s calm, humid, stable conditions.</li>
-        <li><strong>Aircraft:</strong> Aircraft context is estimated from nearby mapped or built-in major airports and mapped runway alignment. It does not use live or scheduled flight data.</li>
-        <li><strong>“Could not check”:</strong> This means the lookup service failed, timed out, or returned incomplete data. It does not mean the site is quiet.</li>
-      </ul>
-      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version 2.1.2</p>
+      <details>
+        <summary>How scoring works</summary>
+        <p>Each hour starts from a <strong>5.0</strong> baseline: usable, but acoustically compromised. Favorable conditions add points and unfavorable conditions subtract points. The result is clamped between 0.0 and 10.0 and rounded to the nearest 0.5 for display. The descriptor is derived only from the displayed rounded score, so the same score always receives the same descriptor.</p>
+        <table>
+          <thead><tr><th>Factor</th><th>Score effect range</th><th>Why it matters</th></tr></thead>
+          <tbody>
+            <tr><th>Surface Wind</th><td>+1.4 to −1.4</td><td>Wind noise, microphone rumble, and movement of nearby material can mask distant calls.</td></tr>
+            <tr><th>Precipitation</th><td>+1.0 to −1.0</td><td>Rain and sleet add direct broadband masking.</td></tr>
+            <tr><th>Humidity</th><td>+0.55 to −0.55</td><td>Very dry air (&lt;65% relative humidity) can weaken high-frequency detail; very humid air (&gt;92%) can coincide with haze, fog, condensation, or a higher noise floor.</td></tr>
+            <tr><th>Visibility</th><td>+0.45 to −0.45</td><td>Haze and fog can indicate acoustic attenuation and reduced distance clarity.</td></tr>
+            <tr><th>Cloud Cover</th><td>+0.30 to −0.30</td><td>Cloud conditions are used as a proxy for sound confinement and overnight stability.</td></tr>
+            <tr><th>Pressure</th><td>+0.30 to −0.30</td><td>Pressure near 1020–1029 hPa is treated as favorable; low pressure (&lt;1010 hPa) or extremely high pressure (&gt;1035 hPa) can signal less favorable propagation conditions.</td></tr>
+            <tr><th>Temperature</th><td>+0.25 to −0.25</td><td>Seasonal temperature fit affects stability and phase-transition risk.</td></tr>
+            <tr><th>Foliage Noise</th><td>+0.40 to −0.40</td><td>Leafed-out vegetation near the recorder can add rustle and broadband masking.</td></tr>
+            <tr><th>Insect Noise</th><td>+0.35 to −0.35</td><td>Insect bands and pulses can overlap NFC frequencies and mask spectrogram structure.</td></tr>
+          </tbody>
+        </table>
+        <table>
+          <thead><tr><th>Displayed score</th><th>Descriptor</th></tr></thead>
+          <tbody>
+            <tr><td>9.0–10.0</td><td>Excellent</td></tr>
+            <tr><td>8.0–8.5</td><td>Very Good</td></tr>
+            <tr><td>7.0–7.5</td><td>Good</td></tr>
+            <tr><td>6.0–6.5</td><td>Fair</td></tr>
+            <tr><td>5.0–5.5</td><td>Marginal</td></tr>
+            <tr><td>3.0–4.5</td><td>Poor</td></tr>
+            <tr><td>1.5–2.5</td><td>Very Poor</td></tr>
+            <tr><td>0.0–1.0</td><td>Unusable</td></tr>
+          </tbody>
+        </table>
+      </details>
+      <details>
+        <summary>Data sources and night windows</summary>
+        <ul>
+          <li><strong>Weather data:</strong> 10 m wind is from Open-Meteo. Near-ground wind is estimated from the same profile. Visibility uses API data when available; otherwise, it is estimated from precipitation and cloud cover.</li>
+          <li><strong>Night windows:</strong> Night windows use astronomical twilight from sunrise-sunset.org.</li>
+          <li><strong>Historical export:</strong> The historical export uses Open-Meteo Historical Weather API data, which is available back to 1940 for many locations. The browser UI caps a single export at 366 evening dates.</li>
+          <li><strong>“Could not check”:</strong> This means the lookup service failed, timed out, or returned incomplete data. It does not mean the site is quiet.</li>
+        </ul>
+      </details>
+      <details>
+        <summary>Local noise settings</summary>
+        <ul>
+          <li><strong>Foliage:</strong> Foliage noise is set by the user. Use a higher setting when leafed-out trees are close to the recorder.</li>
+          <li><strong>Insects:</strong> Insect noise is included as a local-site factor because some insect bands and pulses can overlap nocturnal flight-call frequencies and mask NFC structure on the spectrogram.</li>
+          <li><strong>Human-made noise:</strong> Road and aircraft context is shown separately from the acoustic score because actual source strength varies by traffic volume, flight activity, pavement conditions, and other factors the tool cannot directly measure.
+            <ul>
+              <li><strong>Road traffic:</strong> Estimated from nearby OpenStreetMap roads tagged motorway, trunk, or primary; approximate distance to the selected point; road class; wind direction; and that night’s calm, humid, stable conditions.</li>
+              <li><strong>Aircraft:</strong> Estimated from nearby mapped or built-in major airports and mapped runway alignment. It does not use live or scheduled flight data.</li>
+            </ul>
+          </li>
+        </ul>
+      </details>
+      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version 2.2.8</p>
     </section>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const MODEL_VERSION = "2.1.2";
+    const MODEL_VERSION = "2.2.9";
 
     // ============================================================================
     // CUSTOMIZATION: Acoustic environment scoring baselines
@@ -500,7 +603,7 @@
     //     outside this range are penalized; the ideal center gets the highest score.
     //   - Expected average conditions help calibrate what "moderate" means.
     //   - Leaf-out and senescence dates enable foliage-noise adjustment: wind gets
-    //     weighted more heavily when leaves are present (summer) or drying (fall).
+    //     handled as a separate local-site deduction when leafed-out or dense trees are near the microphone.
     //     Leave as null to disable. Find dates via USDA Phenology Network or local
     //     botanical records. Typical for Massachusetts: leaf-out ~May 10.
 
@@ -532,39 +635,44 @@
       foliage_wind_weight_multiplier_fall: 1.35,
     };
 
-    // Scoring weights: relative importance of each factor to overall score.
-    // Wind is dominant (masking is the primary problem). Precipitation scales
-    // dynamically (see getPrecipitationWeight). Temperatures are now season-aware.
-    const BASE_SCORING_WEIGHTS = {
-      "Surface Wind": 0.28,
-      "Precipitation": 0.20,  // dynamically increased for heavy rain
-      "Humidity": 0.14,
-      "Visibility": 0.12,
-      "Cloud Cover": 0.10,
-      "Pressure": 0.10,
-      "Temperature": 0.06,
-      "Insect Noise": 0.00, // user-selected site context; dynamic weight added below
+    // Scoring model v2.2.4: each hour starts from a 5.0 baseline, meaning
+    // usable but acoustically compromised. Favorable conditions add points and
+    // unfavorable conditions subtract points. The effect ranges sum to +5.0 and
+    // -5.0, so ideal conditions can reach 10.0/10 and maximally poor conditions
+    // can reach 0.0/10.
+    const SCORING_DEDUCTIONS = {
+      "Surface Wind": 2.8,
+      "Precipitation": 2.0,
+      "Humidity": 1.1,
+      "Visibility": 0.9,
+      "Cloud Cover": 0.6,
+      "Pressure": 0.6,
+      "Temperature": 0.5,
+      "Foliage Noise": 0.8,
+      "Insect Noise": 0.7,
     };
 
-    // Dynamic precipitation weighting: heavier rain → higher weight
-    // Heavy rain can dominate conditions even if wind is calm.
-    // Thresholds (mm/hour): adjust based on your local definitions.
-    const PRECIPITATION_WEIGHT_RULES = [
-      { threshold_mm: 5.0, weight: 0.45 },   // heavy rain: dominant factor
-      { threshold_mm: 2.0, weight: 0.35 },   // moderate rain: serious
-      { threshold_mm: 0.5, weight: 0.25 },   // light rain: notable
-      { threshold_mm: 0.1, weight: 0.18 },   // drizzle: minor
-      // below 0.1 mm: use base weight (0.20)
-    ];
+    const SCORE_BASELINE_10 = 5.0;
+
+    const SCORING_EFFECT_RANGES = Object.fromEntries(
+      Object.entries(SCORING_DEDUCTIONS).map(([factor, maxDeduction]) => [factor, maxDeduction / 2])
+    );
+
+    // Kept for compatibility with existing loops and structured output. Values
+    // are normalized maximum deduction shares rather than weighted-average scores.
+    const BASE_SCORING_WEIGHTS = Object.fromEntries(
+      Object.entries(SCORING_DEDUCTIONS).map(([factor, maxDeduction]) => [factor, maxDeduction / 10])
+    );
 
     const weightRationale = {
-      "Surface Wind": "wind noise masks distant calls",
-      "Precipitation": "rain/sleet noise masks calls directly; also wind-in-wet-foliage",
-      "Humidity": "affects sound absorption, especially high frequencies",
-      "Visibility": "proxy for atmospheric clarity and haze",
-      "Cloud Cover": "influences sound confinement and scattering",
-      "Pressure": "indicator of atmospheric stability overnight",
-      "Temperature": "influences mixing, stability, and phase transitions",
+      "Surface Wind": "wind noise, microphone rumble, and movement of nearby material can mask distant calls",
+      "Precipitation": "rain and sleet add direct broadband masking",
+      "Humidity": "very dry air below 65% relative humidity can weaken high-frequency detail; very humid air above 92% can coincide with haze, fog, condensation, or a higher noise floor",
+      "Visibility": "haze and fog can indicate acoustic attenuation and reduced distance clarity",
+      "Cloud Cover": "cloud conditions are used as a proxy for sound confinement and overnight stability",
+      "Pressure": "pressure near 1020–1029 hPa is treated as favorable; low pressure below 1010 hPa or extremely high pressure above 1035 hPa can signal less favorable propagation conditions",
+      "Temperature": "seasonal temperature fit affects stability and phase-transition risk",
+      "Foliage Noise": "leafed-out vegetation near the recorder can add rustle and broadband masking",
       "Insect Noise": "insect bands and pulses can overlap NFC frequencies and mask spectrogram structure",
     };
 
@@ -576,6 +684,7 @@
       "Cloud Cover": "Cloud cover (clear skies may reduce sound confinement)",
       "Pressure": "Pressure (atmospheric instability may scatter distant calls)",
       "Temperature": "Temperature (uneven cooling may blur distant calls)",
+      "Foliage Noise": "Foliage noise (leaf rustle near recorder)",
       "Insect Noise": "Insect noise (sounds may mask NFC structure)",
     };
 
@@ -600,14 +709,17 @@
       runBtn: document.getElementById("runBtn"),
       downloadTxtBtn: document.getElementById("downloadTxtBtn"),
       downloadJsonBtn: document.getElementById("downloadJsonBtn"),
+      exportStartDate: document.getElementById("exportStartDate"),
+      exportEndDate: document.getElementById("exportEndDate"),
+      exportFormat: document.getElementById("exportFormat"),
+      exportHourlyRows: document.getElementById("exportHourlyRows"),
+      exportHistoryBtn: document.getElementById("exportHistoryBtn"),
       status: document.getElementById("status"),
       locationResolved: document.getElementById("locationResolved"),
       forecastSection: document.getElementById("forecastSection"),
       observedSection: document.getElementById("observedSection"),
       forecastSummary: document.getElementById("forecastSummary"),
       observedSummary: document.getElementById("observedSummary"),
-      detailSection: document.getElementById("detailSection"),
-      reportText: document.getElementById("reportText"),
     };
 
     function setStatus(message, loading = false) {
@@ -701,27 +813,38 @@
       return `${n} ${descriptor} ${n === 1 ? "night" : "nights"}`;
     }
 
-    function tierFromScore(score) {
-      if (score >= 80) return 5;
-      if (score >= 70) return 4;
-      if (score >= 60) return 3;
-      if (score >= 50) return 2;
-      if (score >= 35) return 1;
-      return 0;
+    function displayedScoreFrom100(score) {
+      return score100To10(score);
+    }
+
+    function scoreDescriptorFromDisplayed(score10) {
+      const s = Number(score10) || 0;
+      if (s >= 9.0) return "Excellent";
+      if (s >= 8.0) return "Very Good";
+      if (s >= 7.0) return "Good";
+      if (s >= 6.0) return "Fair";
+      if (s >= 5.0) return "Marginal";
+      if (s >= 3.0) return "Poor";
+      if (s >= 1.5) return "Very Poor";
+      return "Unusable";
     }
 
     function qualityExpectation(score) {
-      if (score >= 80)
+      const score10 = displayedScoreFrom100(score);
+      const descriptor = scoreDescriptorFromDisplayed(score10);
+      if (descriptor === "Excellent")
         return "Excellent – Expect clean, clear audio with sharp call definition and strong detail across the frequency spectrum";
-      if (score >= 70)
+      if (descriptor === "Very Good")
         return "Very Good – Expect clear audio with well-defined calls; minor clarity loss most likely in high-frequency detail, roughly above 6–8 kHz";
-      if (score >= 60)
+      if (descriptor === "Good")
         return "Good – Expect calls to be identifiable, with some loss of fine detail, especially above about 5–6 kHz";
-      if (score >= 50)
+      if (descriptor === "Fair")
         return "Fair – Expect calls to remain present but noticeably blurred, with reduced high-frequency detail and weaker distant calls";
-      if (score >= 40)
-        return "Poor – Expect significant audio degradation; distant calls difficult to distinguish from background";
-      if (score >= 25)
+      if (descriptor === "Marginal")
+        return "Marginal – Expect mixed acoustic conditions; recording may be worthwhile, but weak or distant calls may be compromised";
+      if (descriptor === "Poor")
+        return "Poor – Expect significant audio degradation; strong or nearby calls may remain usable, but distant calls will be difficult";
+      if (descriptor === "Very Poor")
         return "Very Poor – Expect heavy degradation; only loud and nearby calls likely to remain clear";
       return "Unusable – Expect audio dominated by noise; recording unlikely to yield usable data";
     }
@@ -732,36 +855,24 @@
     }
 
     function idExpectation(score, historical = false) {
+      const descriptor = scoreDescriptorFromDisplayed(displayedScoreFrom100(score));
       if (!historical) {
-        if (score >= 80) {
-          return "No concerns. Narrow lines, band separation, and fine modulation should be preserved.";
-        } else if (score >= 70) {
-          return "Most IDs should be straightforward; check high bands and faint harmonics above about 6–8 kHz.";
-        } else if (score >= 60) {
-          return "Fine structure may blur and higher bands may be faint or incomplete.";
-        } else if (score >= 50) {
-          return "Double-banded calls may lose the upper band; faint high notes may merge into background noise.";
-        } else if (score >= 40) {
-          return "Weak calls may show only the strongest band or lack enough shape for species-level IDs.";
-        } else if (score >= 25) {
-          return "Only loud, nearby calls are likely to retain enough structure for confident IDs.";
-        }
+        if (descriptor === "Excellent") return "No concerns. Narrow lines, band separation, and fine modulation should be preserved.";
+        if (descriptor === "Very Good") return "Most IDs should be straightforward; check high bands and faint harmonics above about 6–8 kHz.";
+        if (descriptor === "Good") return "Fine structure may blur and higher bands may be faint or incomplete.";
+        if (descriptor === "Fair") return "Double-banded calls may lose the upper band; faint high notes may merge into background noise.";
+        if (descriptor === "Marginal") return "Weak or distant calls may be incomplete; use caution with faint bands and species-level IDs.";
+        if (descriptor === "Poor") return "Weak calls may show only the strongest band or lack enough shape for species-level IDs.";
+        if (descriptor === "Very Poor") return "Only loud, nearby calls are likely to retain enough structure for confident IDs.";
         return "Noise is likely to dominate the spectrogram; detections may not support reliable IDs.";
       }
-
-      if (score >= 80) {
-        return "No concerns. Narrow lines, band separation, and fine modulation were likely preserved.";
-      } else if (score >= 70) {
-        return "Most IDs were likely straightforward; high bands and faint harmonics above about 6–8 kHz warrant checking.";
-      } else if (score >= 60) {
-        return "Fine structure may have blurred and higher bands may have been faint or incomplete.";
-      } else if (score >= 50) {
-        return "Double-banded calls may have lost the upper band; faint high notes may have merged into background noise.";
-      } else if (score >= 40) {
-        return "Weak calls may have shown only the strongest band or lacked enough shape for species-level IDs.";
-      } else if (score >= 25) {
-        return "Only loud, nearby calls were likely to retain enough structure for confident IDs.";
-      }
+      if (descriptor === "Excellent") return "No concerns. Narrow lines, band separation, and fine modulation were likely preserved.";
+      if (descriptor === "Very Good") return "Most IDs were likely straightforward; high bands and faint harmonics above about 6–8 kHz warrant checking.";
+      if (descriptor === "Good") return "Fine structure may have blurred and higher bands may have been faint or incomplete.";
+      if (descriptor === "Fair") return "Double-banded calls may have lost the upper band; faint high notes may have merged into background noise.";
+      if (descriptor === "Marginal") return "Weak or distant calls may have been incomplete; faint bands and species-level IDs warrant caution.";
+      if (descriptor === "Poor") return "Weak calls may have shown only the strongest band or lacked enough shape for species-level IDs.";
+      if (descriptor === "Very Poor") return "Only loud, nearby calls were likely to retain enough structure for confident IDs.";
       return "Noise likely dominated the spectrogram; detections may not have supported reliable IDs.";
     }
 
@@ -773,30 +884,22 @@
     }
 
     function topLimitingFactors(factors, maxN = 2) {
-      const penalties = Object.keys(BASE_SCORING_WEIGHTS).map(name => {
+      const penalties = Object.keys(SCORING_DEDUCTIONS).map(name => {
         const score = factors[name]?.[0] ?? 100;
-        return [name, (100 - score) * BASE_SCORING_WEIGHTS[name]];
+        return [name, (100 - score) * (BASE_SCORING_WEIGHTS[name] || 0)];
       }).sort((a, b) => b[1] - a[1]);
       const positive = penalties.filter(([, p]) => p > 0.1).map(([f]) => f);
       return (positive.length ? positive : penalties.map(([f]) => f)).slice(0, maxN);
     }
 
     function recommendationLinesFromScoreAndFactors(overall, factors, historical = false) {
-      const tier = tierFromScore(overall);
+      const descriptor = scoreDescriptorFromDisplayed(displayedScoreFrom100(overall));
       const limiting2 = topLimitingFactors(factors, 2);
       const expectation = qualityExpectationForContext(overall, historical);
-      let text;
-      if (tier === 5)
-        text = expectation;
-      else if (tier === 4)
-        text = expectation;
-      else if (tier === 3)
-        text = `${expectation} Main concerns: ${formatFactorList(limiting2).toLowerCase()}`;
-      else if (tier === 2)
-        text = `${expectation} Dominant issues: ${formatFactorList(limiting2).toLowerCase()}`;
-      else
-        text = expectation;
-      return text;
+      if (descriptor === "Excellent" || descriptor === "Very Good") return expectation;
+      if (descriptor === "Good" || descriptor === "Fair" || descriptor === "Marginal") return `${expectation} Main concerns: ${formatFactorList(limiting2).toLowerCase()}`;
+      if (descriptor === "Poor") return `${expectation} Dominant issues: ${formatFactorList(limiting2).toLowerCase()}`;
+      return expectation;
     }
 
     function sentenceCase(s) {
@@ -804,22 +907,18 @@
     }
 
     function recommendationFlag(score) {
-      if (score >= 80) return "Excellent";
-      if (score >= 70) return "Very Good";
-      if (score >= 60) return "Good";
-      if (score >= 50) return "Fair";
-      if (score >= 35) return "Poor";
-      if (score >= 25) return "Very Poor";
-      return "Unusable";
+      return scoreDescriptorFromDisplayed(displayedScoreFrom100(score));
     }
 
     function qualityClassFromScore(score) {
-      if (score >= 80) return "quality-excellent";
-      if (score >= 70) return "quality-very-good";
-      if (score >= 60) return "quality-good";
-      if (score >= 50) return "quality-fair";
-      if (score >= 35) return "quality-poor";
-      if (score >= 25) return "quality-very-poor";
+      const descriptor = recommendationFlag(score);
+      if (descriptor === "Excellent") return "quality-excellent";
+      if (descriptor === "Very Good") return "quality-very-good";
+      if (descriptor === "Good") return "quality-good";
+      if (descriptor === "Fair") return "quality-fair";
+      if (descriptor === "Marginal") return "quality-poor";
+      if (descriptor === "Poor") return "quality-poor";
+      if (descriptor === "Very Poor") return "quality-very-poor";
       return "quality-unusable";
     }
 
@@ -996,8 +1095,13 @@
           }
           
           async function fetchHistorical(lat, lon, timezone, daysBack = 3) {
-            const end = addDays(zonedNow(timezone), -1);
-            const start = addDays(end, -(daysBack - 1));
+            // Include today so the previous evening-date night can carry through
+            // the post-midnight hours before astronomical dawn. Without this,
+            // "Last Night" can stop at 23:00 on the evening date.
+            const today = new Date(zonedNow(timezone));
+            today.setHours(0, 0, 0, 0);
+            const start = addDays(today, -daysBack);
+            const end = today;
             const params = {
               latitude: lat,
               longitude: lon,
@@ -1090,69 +1194,122 @@
             return [adjustedScore, explanation];
           }
           
+          function clampNumber(value, min, max) {
+            return Math.max(min, Math.min(max, Number(value) || 0));
+          }
+
+          function round1(value) {
+            return Math.round((Number(value) || 0) * 10) / 10;
+          }
+
+          function effectFromDeduction(factor, deduction) {
+            const maxEffect = SCORING_EFFECT_RANGES[factor] || 0;
+            return clampNumber(maxEffect - (Number(deduction) || 0), -maxEffect, maxEffect);
+          }
+
+          function score10FromEffects(effects) {
+            const totalEffect = Object.values(effects).reduce((sum, v) => sum + (Number(v) || 0), 0);
+            return clampNumber(SCORE_BASELINE_10 + totalEffect, 0, 10);
+          }
+
+          function factorScoreFromEffect(factor, effect) {
+            const maxEffect = SCORING_EFFECT_RANGES[factor] || 1;
+            return clampNumber(50 + ((Number(effect) || 0) / maxEffect) * 50, 0, 100);
+          }
+
+          function formatSignedEffect(value) {
+            const rounded = round1(value);
+            if (Object.is(rounded, -0) || Math.abs(rounded) < 0.05) return "0.0";
+            return `${rounded > 0 ? "+" : "−"}${Math.abs(rounded).toFixed(1)}`;
+          }
+
+          function arithmeticDisplayEffects(rawEffects, targetScore10, decimals = 1) {
+            const factors = Object.keys(SCORING_DEDUCTIONS);
+            const out = {};
+            const scale = Math.pow(10, decimals);
+            for (const factor of factors) {
+              out[factor] = Math.round((Number(rawEffects?.[factor]) || 0) * scale) / scale;
+            }
+            const targetEffect = Math.round((Number(targetScore10) - SCORE_BASELINE_10) * scale) / scale;
+            const shownTotal = Math.round(Object.values(out).reduce((sum, v) => sum + v, 0) * scale) / scale;
+            const residual = Math.round((targetEffect - shownTotal) * scale) / scale;
+            if (Math.abs(residual) >= 1 / scale / 2) {
+              const adjustFactor = factors
+                .slice()
+                .sort((a, b) => Math.abs(Number(rawEffects?.[b]) || 0) - Math.abs(Number(rawEffects?.[a]) || 0))[0];
+              out[adjustFactor] = Math.round((out[adjustFactor] + residual) * scale) / scale;
+            }
+            return out;
+          }
+
           function scoreWind(windGround, gustGround, wind10, gust10) {
             const windMph = mpsToMph(windGround);
             const gustMph = mpsToMph(gustGround);
             const wind10Mph = mpsToMph(wind10);
             const gust10Mph = mpsToMph(gust10);
-            let score, explanation;
-            if (windGround < 1.5) [score, explanation] = [92, `Near-silent (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
-            else if (windGround < 3) [score, explanation] = [82, `Very calm (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
-            else if (windGround < 4.5) [score, explanation] = [68, `Light breeze (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
-            else if (windGround < 6) [score, explanation] = [52, `Moderate wind (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
-            else if (windGround < 8) [score, explanation] = [35, `Windy (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
-            else [score, explanation] = [15, `Heavy wind (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
-          
+            let deduction, explanation;
+            if (windGround < 1.0) [deduction, explanation] = [0.0, `Still / near-silent (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+            else if (windGround < 1.5) [deduction, explanation] = [0.2, `Nearly calm (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+            else if (windGround < 3.0) [deduction, explanation] = [0.6, `Very calm (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+            else if (windGround < 4.5) [deduction, explanation] = [1.2, `Light breeze (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+            else if (windGround < 6.0) [deduction, explanation] = [1.8, `Moderate wind (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+            else if (windGround < 8.0) [deduction, explanation] = [2.3, `Windy (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+            else [deduction, explanation] = [2.8, `Heavy wind (${windMph.toFixed(1)} mph; ${wind10Mph.toFixed(1)} mph @10m)`];
+
             if (gustGround >= 22.4) {
-              score *= 0.6;
-              explanation += " (gusts 50+ mph)";
+              deduction += 0.7;
+              explanation += " with extreme gusts 50+ mph";
+            } else if (gustGround > 10) {
+              deduction += 0.5;
+              explanation += ` with strong gusts ${gustMph.toFixed(1)} mph (${gust10Mph.toFixed(1)} mph @10m)`;
             } else if (gustGround > 7) {
-              score *= 0.8;
-              explanation += ` (gusts ${gustMph.toFixed(1)} mph; ${gust10Mph.toFixed(1)} mph @10m)`;
+              deduction += 0.3;
+              explanation += ` with gusts ${gustMph.toFixed(1)} mph (${gust10Mph.toFixed(1)} mph @10m)`;
             }
-            return [score, explanation];
+            return [clampNumber(deduction, 0, SCORING_DEDUCTIONS["Surface Wind"]), explanation];
           }
-          
+
           function scoreHumidity(h) {
             const ideal = SEASONAL_CONFIG.expected_avg_humidity;
-            const range = 8;
-            if (Math.abs(h - ideal) < 3) return [88, `Optimal humidity (${h}% relative humidity)`];
-            if (Math.abs(h - ideal) < range) return [78, `Good humidity (${h}% relative humidity)`];
-            if (68 <= h && h <= 85) return [72, `Acceptable humidity (${h}% relative humidity)`];
-            if (85 < h && h <= 92) return [58, `Humid (${h}% relative humidity)`];
-            if (h > 92) return [35, `Very humid (${h}% relative humidity)`];
-            return [50, `Dry (${h}% relative humidity)`];
+            const diff = Math.abs(h - ideal);
+            if (diff < 3) return [0.0, `Optimal humidity (${h}% relative humidity)`];
+            if (diff < 8) return [0.2, `Good humidity (${h}% relative humidity)`];
+            if (68 <= h && h <= 85) return [0.4, `Acceptable humidity (${h}% relative humidity)`];
+            if (85 < h && h <= 92) return [0.7, `Humid (${h}% relative humidity)`];
+            if (h > 92) return [1.1, `Very humid (${h}% relative humidity)`];
+            return [0.8, `Dry (${h}% relative humidity)`];
           }
-          
+
           function scoreVisibility(v) {
             const mi = metersToMiles(v);
-            if (v >= 10000) return [88, `Clear visibility (${mi.toFixed(1)} mi)`];
-            if (v >= 8000) return [82, `Excellent visibility (${mi.toFixed(1)} mi)`];
-            if (v >= 6000) return [72, `Good visibility (${mi.toFixed(1)} mi)`];
-            if (v >= 4000) return [58, `Fair visibility with some haze (${mi.toFixed(1)} mi)`];
-            if (v >= 2000) return [38, `Limited visibility (${mi.toFixed(1)} mi)`];
-            return [15, `Poor visibility, fog/haze (${mi.toFixed(1)} mi)`];
+            if (v >= 10000) return [0.0, `Clear visibility (${mi.toFixed(1)} mi)`];
+            if (v >= 8000) return [0.1, `Excellent visibility (${mi.toFixed(1)} mi)`];
+            if (v >= 6000) return [0.25, `Good visibility (${mi.toFixed(1)} mi)`];
+            if (v >= 4000) return [0.45, `Fair visibility with some haze (${mi.toFixed(1)} mi)`];
+            if (v >= 2000) return [0.7, `Limited visibility (${mi.toFixed(1)} mi)`];
+            return [0.9, `Poor visibility, fog/haze (${mi.toFixed(1)} mi)`];
           }
-          
+
           function scoreCloudCover(c) {
             const ideal = SEASONAL_CONFIG.expected_avg_cloud_cover;
-            if (Math.abs(c - ideal) < 15) return [75, `Typical cloud cover (${c}%)`];
-            if (c >= 70) return [72, `Mostly cloudy (${c}%)`];
-            if (c >= 50) return [70, `Partly cloudy (${c}%)`];
-            if (c >= 30) return [68, `Mostly clear (${c}%)`];
-            if (c >= 10) return [65, `Mostly clear (${c}%)`];
-            return [60, `Clear sky (${c}%)`];
+            if (Math.abs(c - ideal) < 15) return [0.0, `Ideal / typical cloud cover (${c}%)`];
+            if (c >= 70) return [0.15, `Mostly cloudy (${c}%)`];
+            if (c >= 50) return [0.1, `Partly cloudy (${c}%)`];
+            if (c >= 30) return [0.2, `Mostly clear (${c}%)`];
+            if (c >= 10) return [0.35, `Mostly clear (${c}%)`];
+            return [0.6, `Clear sky (${c}%)`];
           }
-          
+
           function scorePressure(p) {
-            if (p >= 1025) return [85, `Very high pressure (${p.toFixed(1)} hPa)`];
-            if (p >= 1020) return [82, `High pressure (${p.toFixed(1)} hPa)`];
-            if (p >= 1015) return [75, `Elevated pressure (${p.toFixed(1)} hPa)`];
-            if (p >= 1010) return [65, `Moderate pressure (${p.toFixed(1)} hPa)`];
-            if (p >= 1005) return [48, `Low pressure (${p.toFixed(1)} hPa)`];
-            return [25, `Very low pressure (${p.toFixed(1)} hPa)`];
+            if (p >= 1035) return [0.3, `Extremely high pressure (${p.toFixed(1)} hPa)`];
+            if (p >= 1030) return [0.1, `Very high pressure (${p.toFixed(1)} hPa)`];
+            if (p >= 1020) return [0.0, `Favorable pressure (${p.toFixed(1)} hPa)`];
+            if (p >= 1015) return [0.15, `Elevated pressure (${p.toFixed(1)} hPa)`];
+            if (p >= 1010) return [0.3, `Moderate pressure (${p.toFixed(1)} hPa)`];
+            if (p >= 1005) return [0.45, `Low pressure (${p.toFixed(1)} hPa)`];
+            return [0.6, `Very low pressure (${p.toFixed(1)} hPa)`];
           }
-          
+
           function formatPrecipInches(mm) {
             const inches = mmToInches(mm);
             if (inches > 0 && inches < 0.01) return inches.toFixed(3);
@@ -1162,72 +1319,74 @@
           function scorePrecipitation(p) {
             const amount = Math.max(0, Number(p) || 0);
             const inches = formatPrecipInches(amount);
-            if (amount < 0.02) return [90, "No precipitation"];
-            if (amount < 0.25) return [82, `Trace precipitation (${inches} in)`];
-            if (amount < 1.0) return [70, `Light precipitation (${inches} in)`];
-            if (amount < 2.5) return [48, `Light rain (${inches} in)`];
-            if (amount < 5.0) return [22, `Moderate rain (${inches} in)`];
-            return [8, `Heavy rain (${inches} in)`];
+            if (amount < 0.02) return [0.0, "No precipitation"];
+            if (amount < 0.25) return [0.25, `Trace precipitation (${inches} in)`];
+            if (amount < 1.0) return [0.65, `Light precipitation (${inches} in)`];
+            if (amount < 2.5) return [1.2, `Light rain (${inches} in)`];
+            if (amount < 5.0) return [1.7, `Moderate rain (${inches} in)`];
+            return [2.0, `Heavy rain (${inches} in)`];
           }
-          
+
           function scoreTemperature(t) {
             const f = celsiusToFahrenheit(t);
             const minT = SEASONAL_CONFIG.season_temp_min;
             const maxT = SEASONAL_CONFIG.season_temp_max;
             const idealT = SEASONAL_CONFIG.season_temp_ideal_center;
-          
-            if (Math.abs(t - idealT) < 2) return [85, `Ideal temperature (${f.toFixed(0)}°F)`];
-            if (t >= minT && t <= maxT) return [75, `In-season temperature (${f.toFixed(0)}°F)`];
-            if ((t >= minT - 3 && t < minT) || (t > maxT && t <= maxT + 3)) return [65, `Near season edge (${f.toFixed(0)}°F)`];
-            return [45, `Outside typical season (${f.toFixed(0)}°F)`];
+            if (Math.abs(t - idealT) < 2) return [0.0, `Ideal temperature (${f.toFixed(0)}°F)`];
+            if (t >= minT && t <= maxT) return [0.15, `In-season temperature (${f.toFixed(0)}°F)`];
+            if ((t >= minT - 3 && t < minT) || (t > maxT && t <= maxT + 3)) return [0.3, `Near season edge (${f.toFixed(0)}°F)`];
+            return [0.5, `Outside typical season (${f.toFixed(0)}°F)`];
           }
-          
+
+          function scoreFoliageNoise(multiplier) {
+            const m = Number(multiplier) || 1.0;
+            if (m <= 1.01) return [0.0, "Minimal / open site selected"];
+            if (m <= 1.16) return [0.2, "Light foliage near recorder"];
+            if (m <= 1.36) return [0.5, "Moderate leafed-out trees nearby"];
+            return [0.8, "Heavy / dense trees near microphone"];
+          }
+
           function scoreInsectNoise(level) {
             const normalized = (level || "low").toLowerCase();
-            if (normalized === "heavy") return [35, "Heavy insect chorus likely overlaps NFC frequencies"];
-            if (normalized === "moderate") return [65, "Moderate insect noise may mask faint or high-frequency NFC structure"];
-            return [100, "Low insect noise selected"];
+            if (normalized === "heavy") return [0.7, "Heavy insect chorus likely overlaps NFC frequencies"];
+            if (normalized === "moderate") return [0.35, "Moderate insect noise may mask faint or high-frequency NFC structure"];
+            return [0.0, "Low insect noise selected"];
           }
 
           function getInsectNoiseWeight(level) {
             const normalized = (level || "low").toLowerCase();
-            if (normalized === "heavy") return 0.18;
-            if (normalized === "moderate") return 0.10;
+            if (normalized === "heavy") return SCORING_DEDUCTIONS["Insect Noise"] / 10;
+            if (normalized === "moderate") return (SCORING_DEDUCTIONS["Insect Noise"] / 2) / 10;
             return 0.00;
           }
 
           function analyzeForecast(weather) {
-            const windMultiplier = getSeasonalWindWeightMultiplier(weather.timestamp);
-            const factors = {
-              "Surface Wind": applyFoliageWindPenalty(
-                scoreWind(weather.wind_speed_ground, weather.gust_speed_ground, weather.wind_speed_10m, weather.gust_speed_10m),
-                windMultiplier
-              ),
+            const deductionEntries = {
+              "Surface Wind": scoreWind(weather.wind_speed_ground, weather.gust_speed_ground, weather.wind_speed_10m, weather.gust_speed_10m),
               "Precipitation": scorePrecipitation(weather.precipitation),
               "Humidity": scoreHumidity(weather.humidity),
               "Visibility": scoreVisibility(weather.visibility),
               "Cloud Cover": scoreCloudCover(weather.cloud_cover),
               "Pressure": scorePressure(weather.pressure),
               "Temperature": scoreTemperature(weather.temp),
+              "Foliage Noise": scoreFoliageNoise(activeFoliageWindWeightMultiplier),
               "Insect Noise": scoreInsectNoise(activeInsectNoiseLevel),
             };
-          
-            // Dynamic weights
-            const dynamicWeights = { ...BASE_SCORING_WEIGHTS };
-            dynamicWeights["Precipitation"] = getPrecipitationWeight(weather.precipitation);
-            dynamicWeights["Insect Noise"] = getInsectNoiseWeight(activeInsectNoiseLevel);
-          
-            // Normalize so weights sum to 1
-            const totalWeight = Object.values(dynamicWeights).reduce((a, b) => a + b, 0);
-            const normalizer = 1.0 / totalWeight;
-            Object.keys(dynamicWeights).forEach(k => {
-              dynamicWeights[k] *= normalizer;
-            });
-          
-            const overall = Object.keys(dynamicWeights).reduce((sum, k) => sum + factors[k][0] * dynamicWeights[k], 0);
-            return { overall_score: overall, factors, dynamic_weights: dynamicWeights };
+            const deductions = {};
+            const effects = {};
+            const factors = {};
+            for (const [factor, [deduction, explanation]] of Object.entries(deductionEntries)) {
+              const d = clampNumber(deduction, 0, SCORING_DEDUCTIONS[factor] || 0);
+              const effect = effectFromDeduction(factor, d);
+              deductions[factor] = d;
+              effects[factor] = effect;
+              factors[factor] = [factorScoreFromEffect(factor, effect), explanation];
+            }
+            const score10 = score10FromEffects(effects);
+            const overall = score10 * 10;
+            return { overall_score: overall, score_10: score10, factors, deductions, effects, dynamic_weights: BASE_SCORING_WEIGHTS };
           }
-          
+
           function formatRange(vals, decimals = 0) {
             const lo = Math.min(...vals);
             const hi = Math.max(...vals);
@@ -1277,8 +1436,9 @@
             const span = Math.max(...values) - Math.min(...values);
             const level = avg >= 1022 ? "High pressure" : avg >= 1010 ? "Moderate pressure" : "Low pressure";
             const trend = delta >= 1.5 ? "rising" : delta <= -1.5 ? "falling" : "steady";
-            const variability = span <= 1.5 ? "very stable overnight" : span <= 3.5 ? "fairly stable overnight" : "more variable overnight";
-            return `${level}, ${trend}, ${variability} (${Math.min(...values).toFixed(1)}-${Math.max(...values).toFixed(1)} hPa; net ${delta >= 0 ? "+" : ""}${delta.toFixed(1)} hPa)`;
+            const stability = span <= 1.5 ? "stable" : span <= 3.5 ? "fairly stable" : "variable";
+            const descriptors = trend === "steady" ? [level, stability] : [level, trend, stability];
+            return `${descriptors.join(", ")} (${Math.min(...values).toFixed(1)}-${Math.max(...values).toFixed(1)} hPa; net ${delta >= 0 ? "+" : ""}${delta.toFixed(1)} hPa)`;
           }
           function windMicNoiseCategory(mph) {
             // Estimated near-ground sustained wind at microphone height.
@@ -1338,7 +1498,8 @@
             const cloudVals = weather.map(w => w.cloud_cover);
             const pressureVals = weather.map(w => w.pressure);
             const tempF = weather.map(w => celsiusToFahrenheit(w.temp));
-            const precipTotalMm = weather.reduce((sum, w) => sum + w.precipitation, 0);
+            const precipValsMm = weather.map(w => Math.max(0, Number(w.precipitation) || 0));
+            const precipTotalMm = precipValsMm.reduce((sum, p) => sum + p, 0);
             const humiditySpan = labelSpan(humidityVals.map(humidityLabel), ["Very humid", "Humid", "Moderate", "Dry"]);
             const visPairs = visMiles.map(visibilityLabelAndTip);
             const visLabels = visPairs.map(x => x[0]);
@@ -1349,7 +1510,7 @@
               visTip = visTips[0];
             } else if (countTransitions(visLabels) >= 2) {
               visDesc = "Variable";
-              visTip = "conditions fluctuate through the night";
+              visTip = visTips.includes("significant attenuation; recording quality likely reduced") ? "poorer periods may reduce clarity" : "mixed clarity";
             } else {
               visDesc = labelSpan(visLabels, ["Poor", "Limited", "Good", "Clear"]);
               visTip = visTips.includes("significant attenuation; recording quality likely reduced") ? "poorer periods may reduce clarity" : "generally favorable for recording";
@@ -1365,14 +1526,34 @@
               "Cloud Cover": `${cloudDesc} (${formatRange(cloudVals, 0)}%)`,
               "Pressure": pressureDescription(pressureVals),
               "Temperature": `${formatRange(tempF, 0)}°F`,
-              "Total Precipitation": `${formatPrecipInches(precipTotalMm)} in (${precipTotalMm.toFixed(1)} mm)`,
+              "Precipitation": `Hourly ${formatRange(precipValsMm.map(mmToInches), 2)} in; total ${formatPrecipInches(precipTotalMm)} in (${precipTotalMm.toFixed(1)} mm)`,
+              "Foliage Noise": els.foliageWeight?.selectedOptions?.[0]?.textContent || "User-selected foliage setting",
+              "Insect Noise": els.insectNoise?.selectedOptions?.[0]?.textContent || "User-selected insect setting",
             };
           }
           
           function factorAveragesForNight(night) {
             const out = {};
-            for (const k of Object.keys(BASE_SCORING_WEIGHTS)) {
-              const vals = night.all_forecasts.map(row => row.score.factors[k][0]);
+            for (const k of Object.keys(SCORING_DEDUCTIONS)) {
+              const vals = night.all_forecasts.map(row => row.score.factors[k]?.[0] ?? 100);
+              out[k] = vals.reduce((a, b) => a + b, 0) / vals.length;
+            }
+            return out;
+          }
+
+          function factorDeductionsForNight(night) {
+            const out = {};
+            for (const k of Object.keys(SCORING_DEDUCTIONS)) {
+              const vals = night.all_forecasts.map(row => row.score.deductions?.[k] ?? 0);
+              out[k] = vals.reduce((a, b) => a + b, 0) / vals.length;
+            }
+            return out;
+          }
+
+          function factorEffectsForNight(night) {
+            const out = {};
+            for (const k of Object.keys(SCORING_DEDUCTIONS)) {
+              const vals = night.all_forecasts.map(row => row.score.effects?.[k] ?? 0);
               out[k] = vals.reduce((a, b) => a + b, 0) / vals.length;
             }
             return out;
@@ -1380,20 +1561,29 @@
           
           function factorWeightsForNight(night) {
             const out = {};
-            for (const k of Object.keys(BASE_SCORING_WEIGHTS)) {
-              const vals = night.all_forecasts.map(row => row.score.dynamic_weights[k] ?? 0);
-              out[k] = vals.reduce((a, b) => a + b, 0) / vals.length;
-            }
+            for (const k of Object.keys(SCORING_DEDUCTIONS)) out[k] = BASE_SCORING_WEIGHTS[k] ?? 0;
             return out;
           }
 
           function mainConcern(night) {
-            const fa = factorAveragesForNight(night);
-            const weights = factorWeightsForNight(night);
-            const penalties = {};
-            for (const k of Object.keys(BASE_SCORING_WEIGHTS)) penalties[k] = (100 - fa[k]) * (weights[k] ?? BASE_SCORING_WEIGHTS[k] ?? 0);
-            const worst = Object.keys(penalties).sort((a, b) => penalties[b] - penalties[a])[0];
-            return mainConcernLabel[worst] || `${worst} (primary risk)`;
+            const effects = factorEffectsForNight(night);
+            const entries = Object.entries(effects)
+              .filter(([, v]) => Number.isFinite(Number(v)))
+              .sort((a, b) => Number(a[1]) - Number(b[1]));
+            if (!entries.length) return "No single primary concern";
+
+            const [worstFactor, worstEffect] = entries[0];
+            const score10 = score100To10(night.average_score);
+
+            // In the plus/minus model, a factor at 0.0 is neutral relative to the
+            // 5.0 baseline. Do not call a neutral factor the primary concern.
+            if (worstEffect >= -0.15) {
+              if (score10 <= 5.5) return "Mixed marginal conditions";
+              return "No single primary concern";
+            }
+
+            if (score10 <= 5.5 && worstEffect > -0.35) return "Mixed marginal conditions";
+            return mainConcernLabel[worstFactor] || `${worstFactor} (primary risk)`;
           }
           
           function peakWindow(night, margin = 5) {
@@ -1519,7 +1709,12 @@
           
           async function getHistoricalNights(lat, lon, historical, daysBack = 3, timezone) {
             const nights = await analyzeNightWindows(lat, lon, historical, true, timezone);
-            return nights.slice(0, daysBack);
+            const now = zonedNow(timezone);
+            // Observed nights should be completed nights only. This prevents the
+            // current evening-date window from appearing as "Last Night" when only
+            // its first one or two post-dusk hours are available from today's
+            // historical payload.
+            return nights.filter(night => night.twilight_end <= now).slice(0, daysBack);
           }
           
           function serializeWeather(w) {
@@ -1564,13 +1759,32 @@
             const rawLabelText = recommendationLinesForNight(night, type === "historical");
             const labelText = type === "historical" ? stripQualityQualifier(rawLabelText) : rawLabelText;
             const factorAvgs = factorAveragesForNight(night);
+            const factorDeductions = factorDeductionsForNight(night);
+            const factorEffects = factorEffectsForNight(night);
                   const factorAvgsSerialized = {};
                   for (const [k, v] of Object.entries(factorAvgs)) {
-                    factorAvgsSerialized[k] = { score_100: Number(v.toFixed(2)), score_10: score100To10(v) };
+                    factorAvgsSerialized[k] = {
+                      score_100: Number(v.toFixed(2)),
+                      score_10: score100To10(v),
+                      average_effect_10: Number((factorEffects[k] || 0).toFixed(2)),
+                      max_positive_effect_10: SCORING_EFFECT_RANGES[k],
+                      max_negative_effect_10: -SCORING_EFFECT_RANGES[k],
+                      average_deduction_10: Number((factorDeductions[k] || 0).toFixed(2)),
+                      max_deduction_10: SCORING_DEDUCTIONS[k]
+                    };
                   }
                   const bestHourFactors = {};
                   for (const [k, v] of Object.entries(night.best_condition_score.factors)) {
-                    bestHourFactors[k] = { score_100: Number(v[0].toFixed(2)), score_10: score100To10(v[0]), explanation: v[1] };
+                    bestHourFactors[k] = {
+                      score_100: Number(v[0].toFixed(2)),
+                      score_10: score100To10(v[0]),
+                      effect_10: Number((night.best_condition_score.effects?.[k] || 0).toFixed(2)),
+                      max_positive_effect_10: SCORING_EFFECT_RANGES[k],
+                      max_negative_effect_10: -SCORING_EFFECT_RANGES[k],
+                      deduction_10: Number((night.best_condition_score.deductions?.[k] || 0).toFixed(2)),
+                      max_deduction_10: SCORING_DEDUCTIONS[k],
+                      explanation: v[1]
+                    };
                   }
                   return {
                     type,
@@ -1581,6 +1795,9 @@
                     twilight_end: localIso(night.twilight_end),
                     average_score_100: Number(night.average_score.toFixed(2)),
                     average_score_10: score100To10(night.average_score),
+                    baseline_score_10: SCORE_BASELINE_10,
+                    total_effect_10: Number((score100To10(night.average_score) - SCORE_BASELINE_10).toFixed(1)),
+                    descriptor: recommendationFlag(night.average_score),
                     quality_expectation: labelText,
                     id_expectation: idExpectation(night.average_score, type === "historical"),
                     best_time: fmtTime(night.best_time),
@@ -1594,11 +1811,20 @@
                     human_noise_context: localNoiseContext,
                     night_conditions_summary: summarizeNightConditions(night),
                     factor_averages: factorAvgsSerialized,
+                    factor_average_effects_10: Object.fromEntries(Object.entries(factorEffects).map(([k, v]) => [k, Number(v.toFixed(2))])),
+                    factor_average_deductions_10: Object.fromEntries(Object.entries(factorDeductions).map(([k, v]) => [k, Number(v.toFixed(2))])),
                     best_hour_factor_scores: bestHourFactors,
+                    best_hour_effects_10: Object.fromEntries(Object.entries(night.best_condition_score.effects || {}).map(([k, v]) => [k, Number(v.toFixed(2))])),
+                    best_hour_deductions_10: Object.fromEntries(Object.entries(night.best_condition_score.deductions || {}).map(([k, v]) => [k, Number(v.toFixed(2))])),
                     hourly: night.all_forecasts.map(row => ({
                       timestamp: localIso(row.time),
                       overall_score_100: Number(row.score.overall_score.toFixed(2)),
                       overall_score_10: score100To10(row.score.overall_score),
+                      descriptor: recommendationFlag(row.score.overall_score),
+                      baseline_score_10: SCORE_BASELINE_10,
+                      total_effect_10: Number((score100To10(row.score.overall_score) - SCORE_BASELINE_10).toFixed(1)),
+                      factor_effects_10: Object.fromEntries(Object.entries(row.score.effects || {}).map(([k, v]) => [k, Number(v.toFixed(2))])),
+                      factor_deductions_10: Object.fromEntries(Object.entries(row.score.deductions || {}).map(([k, v]) => [k, Number(v.toFixed(2))])),
                       weather: serializeWeather(row.weather),
                     })),
                   };
@@ -1619,12 +1845,16 @@
                       scores_internal: "0-100",
                       scores_display: "0-10",
                     },
+                    scoring_model: "Each hour starts from a 5.0 usable-but-compromised baseline. Favorable factor effects add points and unfavorable factor effects subtract points. Displayed factor effects are weighted score contributions, so 5.0 plus factor effects equals the displayed score.",
+                    baseline_score_10: SCORE_BASELINE_10,
+                    max_effect_ranges_10: SCORING_EFFECT_RANGES,
+                    max_deductions_10: SCORING_DEDUCTIONS,
                     base_weights: BASE_SCORING_WEIGHTS,
-                    foliage_wind_penalty_multiplier: Number(activeFoliageWindWeightMultiplier),
+                    foliage_setting_multiplier: Number(activeFoliageWindWeightMultiplier),
                     insect_noise_level: activeInsectNoiseLevel,
                     insect_noise_weight: getInsectNoiseWeight(activeInsectNoiseLevel),
                     weight_rationale: weightRationale,
-                    human_noise_method: localNoiseResources ? "Optional. Nearby roads and airports are looked up once; road-traffic and aircraft-noise notes are assessed separately for each night using that night's wind, humidity, pressure, and cloud cover. Road and aircraft context is not included in the weighted acoustic score; insect noise is included when selected." : "Optional human-made noise lookup was not run.",
+                    human_noise_method: localNoiseResources ? "Optional. Nearby roads and airports are looked up once; road-traffic and aircraft-noise notes are assessed separately for each night using that night's wind, humidity, pressure, and cloud cover. Road and aircraft context is not included in the acoustic score; insect noise is included when selected." : "Optional human-made noise lookup was not run.",
                     local_noise_warnings: localNoiseResources?.warnings || [],
                     forecast_nights: forecastNights.map((night, i) => serializeNight(night, night.forecast_label || forecastNightLabel(i + 1), "forecast", localNoiseResources ? buildNoiseContextForNight(localNoiseResources, night) : null)),
                     historical_nights: historicalNights.map((night, i) => serializeNight(night, historicalNightLabel(i + 1), "historical", localNoiseResources ? buildNoiseContextForNight(localNoiseResources, night) : null)),
@@ -1634,7 +1864,7 @@
                 function decisionSummaryLine(label, night) {
                   const rec = recommendationFlag(night.average_score);
                   const peak = `${fmtTime(night.peak_start)}-${fmtTime(night.peak_end)}`;
-                  return `${label.padEnd(16)} Expect: ${night.average_score >= 60 ? "Good audio" : night.average_score >= 45 ? "Moderate audio" : "Poor audio"}\n${"".padEnd(16)} Best: ${fmtTime(night.best_time)}  Peak: ${peak}\n${"".padEnd(16)} Primary concern: ${primaryConcernDisplay(night.main_concern)}`;
+                  return `${label.padEnd(16)} Expect: ${night.average_score >= 60 ? "Good audio" : night.average_score >= 45 ? "Moderate audio" : "Poor audio"}\n${"".padEnd(16)} Best: ${fmtTime(night.best_time)}  Peak: ${peak}\n${"".padEnd(16)} Acoustic summary: ${primaryConcernDisplay(night.main_concern)}`;
                 }
             
                 function lowercaseFactorAfterColon(s) {
@@ -2026,6 +2256,10 @@
                   ];
                 }
 
+                function formatDeduction(value) {
+                  return `−${Number(value || 0).toFixed(1)}`;
+                }
+
             
                 function generateReport(lat, lon, timezone, regionName, forecastNights, historicalNights, localNoiseResources = null) {
                   if (!forecastNights.length) return "Unable to fetch weather data. Please check your internet connection or CORS/browser privacy settings.";
@@ -2054,7 +2288,7 @@
                     report += `   Acoustic Quality Score: ${formatScore10(night.average_score)}\n`;
                     report += `   Quality Expectation: ${recommendationFlag(night.average_score)}\n`;
                     report += `   Best Hour: ${fmtTime(night.best_time)}\n`;
-                    report += `   Primary concern: ${primaryConcernDisplay(night.main_concern)}\n`;
+                    report += `   Acoustic summary: ${primaryConcernDisplay(night.main_concern)}\n`;
                     report += "\n   Acoustic Conditions for the Night:\n";
                     Object.entries(nightConditions).forEach(([metric, details]) => {
                       report += `   • ${metric.padEnd(20)} ${details}\n`;
@@ -2077,7 +2311,7 @@
                       report += `   Acoustic Quality Score: ${formatScore10(night.average_score)}\n`;
                       report += `   Quality Expectation: ${recommendationFlag(night.average_score)}\n`;
                       report += `   Best Hour: ${fmtTime(night.best_time)}\n`;
-                      report += `   Primary concern: ${primaryConcernDisplay(night.main_concern)}\n`;
+                      report += `   Acoustic summary: ${primaryConcernDisplay(night.main_concern)}\n`;
                       report += "\n   Acoustic Conditions for the Night:\n";
                       Object.entries(nightConditions).forEach(([metric, details]) => {
                         report += `   • ${metric.padEnd(20)} ${details}\n`;
@@ -2099,21 +2333,26 @@
                   report += "  • Night windows are based on astronomical dusk-to-dawn hour bounds\n";
                   report += "  • Pressure wording: 'steady' = small net change; 'very stable' = small total range\n";
                   report += "  • Foliage noise is set by the user; use a higher setting when leafed-out trees are close to the recorder\n";
-                  report += "  • Precipitation weighting scales dynamically: heavier rain → higher weight\n";
+                  report += "  • The score starts from a 5.0 usable-but-compromised baseline; favorable factors add points and unfavorable factors subtract points\n";
                   report += "  • TXT and JSON reports are generated in the browser and not uploaded anywhere\n";
-                  report += "  • Optional human-made noise context is separate from the weighted acoustic score\n";
+                  report += "  • Optional human-made noise context is separate from the acoustic score\n";
                   report += "  • Road traffic context uses nearby OpenStreetMap motorway/trunk/primary roads, road class, distance, wind direction, and that night’s calm/humid/stable conditions\n";
                   report += "  • Aircraft context uses nearby mapped or built-in major airports and mapped runway alignment; it does not use live or scheduled flight data\n";
                   report += "  • 'Could not check' means the lookup service failed, timed out, or returned incomplete data, not that the site is quiet\n\n";
                   report += `Scoring model version: ${MODEL_VERSION}\n\n`;
-                  report += "Base Factor Weighting (dynamically adjusted):\n";
-                  Object.entries(BASE_SCORING_WEIGHTS).forEach(([factor, weight]) => {
-                    report += `  • ${factor.padEnd(20)} ${(weight * 100).toFixed(0)}% - ${weightRationale[factor] || ""}\n`;
+                  report += "Factor Score Effect Ranges:\n";
+                  Object.entries(SCORING_EFFECT_RANGES).forEach(([factor, effectRange]) => {
+                    report += `  • ${factor.padEnd(20)} +${effectRange.toFixed(2)} to −${effectRange.toFixed(2)} - ${weightRationale[factor] || ""}\n`;
                   });
-                  report += "\nDynamic Adjustments:\n";
-                  report += "  • Precipitation: Weight scales from 0.18 (drizzle) to 0.45 (heavy rain)\n";                  report += `  • Wind (foliage): Current UI penalty multiplier ×${Number(activeFoliageWindWeightMultiplier).toFixed(2)}; applied based on the user-selected site context
-`;
-                  report += "  • Temperature, Humidity, Cloud Cover: Calibrated to seasonal expectations\n";
+                  report += "\nDescriptor Bands:\n";
+                  report += "  • 9.0–10.0 Excellent\n";
+                  report += "  • 8.0–8.5 Very Good\n";
+                  report += "  • 7.0–7.5 Good\n";
+                  report += "  • 6.0–6.5 Fair\n";
+                  report += "  • 5.0–5.5 Marginal\n";
+                  report += "  • 3.0–4.5 Poor\n";
+                  report += "  • 1.5–2.5 Very Poor\n";
+                  report += "  • 0.0–1.0 Unusable\n";
                   return report;
                 }
             
@@ -2130,6 +2369,21 @@
                   const remainder = String(text).slice(String(text).indexOf(parts[1]));
                   return `<strong>${escapeHtml(descriptor)}</strong> – ${escapeHtml(remainder)}`;
                 }
+
+                function formatShortHourStartRange(night) {
+                  const format = value => {
+                    const text = String(value || "");
+                    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
+                    if (!match) return text.replace("T", " ");
+                    const [, year, month, day, time] = match;
+                    const date = new Date(Number(year), Number(month) - 1, Number(day));
+                    const monthName = date.toLocaleString("en-US", { month: "short" });
+                    return `${monthName} ${Number(day)} ${time}`;
+                  };
+                  const start = format(night.window_start || night.twilight_start);
+                  const end = format(night.window_end || night.twilight_end);
+                  return `${start}–${end}`;
+                }
             
                 function renderNightCard(night) {
                   const qualityClass = qualityClassFromScore(night.average_score_100);
@@ -2145,25 +2399,39 @@
                     <div class="score">${escapeHtml(night.average_score_10.toFixed(1))}/10</div>
                     <table>
                       <tbody>
-                        <tr><th>Nocturnal Hours</th><td>${escapeHtml(night.twilight_start.replace("T", " "))} → ${escapeHtml(night.twilight_end.replace("T", " "))}</td></tr>
+                        <tr><th>Nocturnal hourly starts</th><td>${escapeHtml(formatShortHourStartRange(night))}</td></tr>
                         <tr><th>Expectation</th><td>${formatQualityExpectationHtml(qualityParts.expectation)}</td></tr>
                         <tr><th>Best Hour</th><td>${escapeHtml(night.best_time)}</td></tr>
-                        <tr><th>Primary Concern</th><td>${escapeHtml(primaryConcernDisplay(night.main_concern))}</td></tr>
+                        <tr><th>Acoustic summary</th><td>${escapeHtml(primaryConcernDisplay(night.main_concern))}</td></tr>
                         <tr><th>ID Cautions</th><td>${escapeHtml(night.id_expectation)}</td></tr>
                         ${night.human_noise_context ? `<tr><th>Human-made noise</th><td>${escapeHtml(localNoiseContextSummary(night.human_noise_context))}</td></tr>` : ""}
                       </tbody>
                     </table>
-                    <details>
+                    <details class="night-conditions-details">
                       <summary>Night conditions</summary>
                       <table>
-                        <tbody>${Object.entries(night.night_conditions_summary).map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join("")}</tbody>
+                        <thead><tr><th>Factor</th><th>Night condition</th><th>Score effect</th></tr></thead>
+                        <tbody>${(() => {
+                          const displayEffects = arithmeticDisplayEffects(night.factor_average_effects_10 || {}, night.average_score_10);
+                          return Object.entries(night.night_conditions_summary).map(([k, v]) => {
+                            const effect = displayEffects?.[k] ?? null;
+                            const effectText = effect == null ? "—" : formatSignedEffect(effect);
+                            return `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td><td>${escapeHtml(effectText)}</td></tr>`;
+                          }).join("");
+                        })()}</tbody>
                       </table>
                     </details>
-                    <details>
-                      <summary>Best-hour factor scores</summary>
+                    <details class="best-hour-details">
+                      <summary>Best hour: ${escapeHtml(night.best_time)}</summary>
                       <table>
-                        <thead><tr><th>Factor</th><th>Score</th><th>Explanation</th></tr></thead>
-                        <tbody>${Object.entries(night.best_hour_factor_scores).filter(([k]) => k !== "Insect Noise").map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v.score_10.toFixed(1))}/10</td><td>${escapeHtml(v.explanation)}</td></tr>`).join("")}</tbody>
+                        <thead><tr><th>Factor</th><th>Score effect</th><th>Explanation</th></tr></thead>
+                        <tbody>${(() => {
+                          const displayEffects = arithmeticDisplayEffects(
+                            Object.fromEntries(Object.entries(night.best_hour_factor_scores).map(([factor, v]) => [factor, Number(v.effect_10 || 0)])),
+                            score100To10((night.best_hour_score_100 ?? (night.best_hour_score_10 * 10)))
+                          );
+                          return Object.entries(night.best_hour_factor_scores).map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(formatSignedEffect(displayEffects[k] ?? v.effect_10 ?? 0))}</td><td>${escapeHtml(v.explanation)}</td></tr>`).join("");
+                        })()}</tbody>
                       </table>
                     </details>
                   `;
@@ -2218,6 +2486,164 @@
                   URL.revokeObjectURL(url);
                 }
             
+
+                async function fetchHistoricalRange(lat, lon, timezone, startDateIso, endDateIso) {
+                  const params = {
+                    latitude: lat,
+                    longitude: lon,
+                    start_date: startDateIso,
+                    end_date: endDateIso,
+                    hourly: "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,precipitation,surface_pressure,visibility",
+                    timezone,
+                    windspeed_unit: "ms",
+                  };
+                  return parseHourlyPayload(await requestOpenMeteoJson("https://archive-api.open-meteo.com/v1/archive", params), true);
+                }
+
+                function csvEscape(value) {
+                  if (value == null) return "";
+                  const s = String(value);
+                  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+                  return s;
+                }
+
+                function rowsToCsv(rows) {
+                  if (!rows.length) return "";
+                  const headers = [...new Set(rows.flatMap(row => Object.keys(row)))];
+                  return [
+                    headers.map(csvEscape).join(","),
+                    ...rows.map(row => headers.map(h => csvEscape(row[h])).join(",")),
+                  ].join("\n");
+                }
+
+                function exportRowsForNight(night, includeHourlyRows) {
+                  const effects = factorEffectsForNight(night);
+                  const base = {
+                    row_type: "night_summary",
+                    night_date: night.night_date,
+                    twilight_start: localIso(night.twilight_start),
+                    twilight_end: localIso(night.twilight_end),
+                    hours_count: night.hours_count,
+                    average_score_10: score100To10(night.average_score).toFixed(1),
+                    descriptor: recommendationFlag(night.average_score),
+                    baseline_score_10: SCORE_BASELINE_10.toFixed(1),
+                    total_effect_10: (score100To10(night.average_score) - SCORE_BASELINE_10).toFixed(1),
+                    best_hour: fmtTime(night.best_time),
+                    best_hour_score_10: score100To10(night.best_condition_score.overall_score).toFixed(1),
+                    least_favorable_hour: fmtTime(night.least_favorable_time),
+                    main_concern: primaryConcernDisplay(night.main_concern),
+                  };
+                  Object.entries(effects).forEach(([factor, value]) => {
+                    base[`${factor.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}_effect_10`] = Number(value).toFixed(2);
+                  });
+                  const rows = [base];
+                  if (includeHourlyRows) {
+                    night.all_forecasts.forEach(row => {
+                      const w = row.weather;
+                      const hourly = {
+                        row_type: "hourly",
+                        night_date: night.night_date,
+                        timestamp: localIso(row.time),
+                        score_10: score100To10(row.score.overall_score).toFixed(1),
+                        descriptor: recommendationFlag(row.score.overall_score),
+                        baseline_score_10: SCORE_BASELINE_10.toFixed(1),
+                        total_effect_10: (score100To10(row.score.overall_score) - SCORE_BASELINE_10).toFixed(1),
+                        temperature_f: celsiusToFahrenheit(w.temp).toFixed(1),
+                        humidity_pct: w.humidity,
+                        wind_ground_mph: mpsToMph(w.wind_speed_ground).toFixed(1),
+                        gust_ground_mph: mpsToMph(w.gust_speed_ground).toFixed(1),
+                        wind_10m_mph: mpsToMph(w.wind_speed_10m).toFixed(1),
+                        gust_10m_mph: mpsToMph(w.gust_speed_10m).toFixed(1),
+                        wind_direction_10m_compass: compassDirection(w.wind_direction_10m),
+                        precipitation_in: mmToInches(w.precipitation).toFixed(3),
+                        visibility_mi: metersToMiles(w.visibility).toFixed(2),
+                        cloud_cover_pct: w.cloud_cover,
+                        pressure_hpa: w.pressure,
+                        foliage_setting: els.foliageWeight?.selectedOptions?.[0]?.textContent || "",
+                        insect_setting: els.insectNoise?.selectedOptions?.[0]?.textContent || "",
+                      };
+                      Object.entries(row.score.effects || {}).forEach(([factor, value]) => {
+                        hourly[`${factor.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}_effect_10`] = Number(value).toFixed(2);
+                      });
+                      rows.push(hourly);
+                    });
+                  }
+                  return rows;
+                }
+
+                async function exportHistoricalScoring() {
+                  const lat = Number(els.lat.value);
+                  const lon = Number(els.lon.value);
+                  activeFoliageWindWeightMultiplier = Number(els.foliageWeight.value) || 1.0;
+                  activeInsectNoiseLevel = els.insectNoise.value || "low";
+                  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+                    setStatus("Enter valid latitude and longitude values.");
+                    return;
+                  }
+                  const startDate = els.exportStartDate.value;
+                  const endDate = els.exportEndDate.value;
+                  if (!startDate || !endDate) {
+                    setStatus("Choose a start and end evening date for the historical export.");
+                    return;
+                  }
+                  const start = parseLocalDateTime(`${startDate}T00:00`);
+                  const end = parseLocalDateTime(`${endDate}T00:00`);
+                  if (end < start) {
+                    setStatus("End evening date must be the same as or later than the start evening date.");
+                    return;
+                  }
+                  const nightCount = Math.round((end - start) / 86400000) + 1;
+                  if (nightCount > 366) {
+                    setStatus("Historical export is capped at 366 evening dates per file. Choose a shorter range.");
+                    return;
+                  }
+                  const processStart = performance.now();
+                  els.exportHistoryBtn.disabled = true;
+                  setStatus("Fetching timezone, region name, historical weather, and twilight windows for export...", true);
+                  try {
+                    twilightCache.clear();
+                    nightWindowCache.clear();
+                    const [timezone, regionName] = await Promise.all([
+                      detectTimezoneName(lat, lon, els.tz.value),
+                      detectRegionName(lat, lon),
+                    ]);
+                    els.tz.value = timezone;
+                    els.locationResolved.textContent = `Region: ${regionName}`;
+                    const fetchEnd = dateIso(addDays(end, 1));
+                    const metrics = await fetchHistoricalRange(lat, lon, timezone, startDate, fetchEnd);
+                    const nightsAll = await analyzeNightWindows(lat, lon, metrics, false, timezone);
+                    const nights = nightsAll.filter(n => n.night_date >= startDate && n.night_date <= endDate);
+                    if (!nights.length) throw new Error("No night windows were found for that date range.");
+                    const structured = {
+                      model_version: MODEL_VERSION,
+                      generated_at: localIso(new Date()),
+                      location: { latitude: lat, longitude: lon, region_state_name: regionName, timezone },
+                      date_range: { start_evening_date: startDate, end_evening_date: endDate, requested_nights: nightCount, exported_nights: nights.length },
+                      scoring_model: "Each hour starts from a 5.0 usable-but-compromised baseline. Favorable factor effects add points and unfavorable factor effects subtract points. Displayed factor effects are weighted score contributions, so 5.0 plus factor effects equals the displayed score.",
+                      baseline_score_10: SCORE_BASELINE_10,
+                      max_effect_ranges_10: SCORING_EFFECT_RANGES,
+                      max_deductions_10: SCORING_DEDUCTIONS,
+                      foliage_setting: els.foliageWeight?.selectedOptions?.[0]?.textContent || "",
+                      insect_setting: els.insectNoise?.selectedOptions?.[0]?.textContent || "",
+                      nights: nights.map((night, i) => serializeNight(night, `Historical ${i + 1}`, "historical", null)),
+                    };
+                    const basename = sanitizeFilename(`Historical acoustic scoring - ${regionName || `${lat.toFixed(4)}, ${lon.toFixed(4)}`} - ${startDate} to ${endDate}`);
+                    if (els.exportFormat.value === "json") {
+                      downloadFile(`${basename}.json`, JSON.stringify(structured, null, 2), "application/json;charset=utf-8");
+                    } else {
+                      const rows = nights.flatMap(night => exportRowsForNight(night, els.exportHourlyRows.checked));
+                      downloadFile(`${basename}.csv`, rowsToCsv(rows), "text/csv;charset=utf-8");
+                    }
+                    const elapsedSecs = ((performance.now() - processStart) / 1000).toFixed(1);
+                    setStatus(`Done (took ${elapsedSecs} secs). Exported ${pluralizeNightCount(nights.length, "historical")}.`);
+                  } catch (err) {
+                    console.error(err);
+                    setStatus(`Error: ${err.message}. If this is a browser CORS or privacy-blocking issue, try another browser or host the file on a simple static web server.`);
+                  } finally {
+                    els.exportHistoryBtn.disabled = false;
+                  }
+                }
+
                 async function runForecast() {
                   const lat = Number(els.lat.value);
                   const lon = Number(els.lon.value);
@@ -2237,7 +2663,6 @@
                   els.forecastSection.hidden = true;
                   els.observedSection.hidden = true;
                   els.locationResolved.textContent = "";
-                  els.detailSection.style.display = "none";
                   setStatus("Fetching timezone, region name, forecast, historical weather, and twilight windows...");
                   try {
                     twilightCache.clear();
@@ -2264,8 +2689,6 @@
                     lastReport = generateReport(lat, lon, timezone, regionName, forecastNights, historicalNights, localNoiseResources);
                     lastBaseName = buildOutputBasename(lat, lon, regionName, forecastNights);
                     renderSummary(lastStructured);
-                    els.reportText.textContent = lastReport;
-                    els.detailSection.style.display = "block";
                     els.downloadTxtBtn.disabled = false;
                     els.downloadJsonBtn.disabled = false;
                     const elapsedSecs = ((performance.now() - processStart) / 1000).toFixed(1);
@@ -2343,11 +2766,22 @@
                   setTimeout(() => locationMap.invalidateSize(), 0);
                 }
 
+                function initializeHistoricalExportDates() {
+                  if (!els.exportStartDate || !els.exportEndDate) return;
+                  const today = new Date();
+                  const yesterday = addDays(new Date(today.getFullYear(), today.getMonth(), today.getDate()), -1);
+                  const weekAgo = addDays(yesterday, -6);
+                  els.exportStartDate.value = dateIso(weekAgo);
+                  els.exportEndDate.value = dateIso(yesterday);
+                }
+
                 initLocationMap();
+                initializeHistoricalExportDates();
 
                 els.runBtn.addEventListener("click", runForecast);
                 els.downloadTxtBtn.addEventListener("click", () => downloadFile(`${lastBaseName}.txt`, lastReport, "text/plain;charset=utf-8"));
                 els.downloadJsonBtn.addEventListener("click", () => downloadFile(`${lastBaseName}.json`, JSON.stringify(lastStructured, null, 2), "application/json;charset=utf-8"));
+                els.exportHistoryBtn.addEventListener("click", exportHistoricalScoring);
               </script>
             </body>
             </html>
