@@ -582,13 +582,13 @@
           </li>
         </ul>
       </details>
-      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version 2.2.8</p>
+      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version 2.2.12</p>
     </section>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const MODEL_VERSION = "2.2.9";
+    const MODEL_VERSION = "2.2.12";
 
     // ============================================================================
     // CUSTOMIZATION: Acoustic environment scoring baselines
@@ -1461,36 +1461,195 @@
           }
 
           function windMicNoiseDescriptor(windMph, gustMph) {
-            const orderedWind = ["still", "very light", "light", "moderate", "heavy", "very heavy"];
-            const orderedGust = ["minimal gusts", "light gusts", "moderate gusts", "strong gusts", "heavy gusts", "very heavy gusts"];
+            const windRange = formatRange(windMph, 1);
+            const gustMax = Math.max(...gustMph);
+            const windMax = Math.max(...windMph);
+            const windMin = Math.min(...windMph);
             const windLabels = windMph.map(windMicNoiseCategory);
+            const orderedWind = ["still", "very light", "light", "moderate", "heavy", "very heavy"];
             const present = [...new Set(windLabels.map(label => orderedWind.indexOf(label)).filter(i => i >= 0))].sort((a, b) => a - b);
             const first = orderedWind[present[0]] || "variable";
             const last = orderedWind[present[present.length - 1]] || first;
-            let descriptor = first === last
-              ? `${first}`
-              : `from ${first} to ${last}`;
-
-            const windMax = Math.max(...windMph);
-            const windMin = Math.min(...windMph);
-            const gustMax = Math.max(...gustMph);
+            const base = first === last ? sentenceCase(first) : `${sentenceCase(first)} to ${last}`;
             const gustLabel = windGustCategory(gustMax);
-            const gustIndex = orderedGust.indexOf(gustLabel);
-            const gustMeaningful = gustIndex >= orderedGust.indexOf("moderate gusts") || (gustMax >= 6 && gustMax - windMax >= 5);
-            const variable = windMax - windMin >= 5 || countTransitions(windLabels) >= 2;
-
-            if (gustMeaningful) {
-              descriptor += `, with ${gustLabel}`;
-            }
-            if (variable && first !== last) {
-              descriptor += "; variable overnight";
-            }
-            return sentenceCase(descriptor);
+            const gustMeaningful = gustLabel !== "minimal gusts" && (gustMax >= 10 || gustMax - windMax >= 5);
+            return `${base}: ${windRange} mph${gustMeaningful ? `, with ${gustLabel} up to ${gustMax.toFixed(1)} mph` : ` (max gust ${gustMax.toFixed(1)} mph)`}`;
           }
 
-          
+          function scoreEffectLevel(effect) {
+            const e = Number(effect) || 0;
+            if (e >= 0.15) return "positive";
+            if (e <= -0.15) return "negative";
+            return "neutral";
+          }
+
+          function periodLabelFromIndexes(indexes, total) {
+            if (!indexes.length || !total) return "at times";
+            if (indexes.length >= Math.ceil(total * 0.65)) return "most of the night";
+            const first = Math.min(...indexes);
+            const last = Math.max(...indexes);
+            const earlyEnd = Math.floor((total - 1) / 3);
+            const lateStart = Math.ceil((total - 1) * 2 / 3);
+            if (last <= earlyEnd) return "early";
+            if (first >= lateStart) return "late";
+            if (first > earlyEnd && last < lateStart) return "midnight hours";
+            if (first <= earlyEnd && last >= lateStart) return "at times";
+            if (first <= earlyEnd) return "early to mid-night";
+            if (last >= lateStart) return "mid- to late night";
+            return "at times";
+          }
+
+          function dominantWindLabel(windMph) {
+            const counts = new Map();
+            windMph.forEach(mph => {
+              const label = windMicNoiseCategory(mph);
+              counts.set(label, (counts.get(label) || 0) + 1);
+            });
+            return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "variable";
+          }
+
+          function summarizeWindCondition(windMph, gustMph, effect) {
+            const level = scoreEffectLevel(effect);
+            const windRange = formatRange(windMph, 1);
+            const gustMax = Math.max(...gustMph);
+            const windMax = Math.max(...windMph);
+            const orderedWind = ["still", "very light", "light", "moderate", "heavy", "very heavy"];
+            const windLabels = windMph.map(windMicNoiseCategory);
+            const present = [...new Set(windLabels.map(label => orderedWind.indexOf(label)).filter(i => i >= 0))].sort((a, b) => a - b);
+            const lightest = orderedWind[present[0]] || "variable";
+            const heaviest = orderedWind[present[present.length - 1]] || lightest;
+            const dominant = dominantWindLabel(windMph);
+            const strongGustIndexes = gustMph.map((mph, i) => mph >= 16 ? i : -1).filter(i => i >= 0);
+            const moderateGustIndexes = gustMph.map((mph, i) => mph >= 10 ? i : -1).filter(i => i >= 0);
+            const gustIndexes = strongGustIndexes.length ? strongGustIndexes : moderateGustIndexes;
+            const gustLabel = gustMax >= 24 ? "heavy gusts" : gustMax >= 16 ? "strong gusts" : gustMax >= 10 ? "gusts" : "gusts";
+            const gustPhrase = gustMax >= 10
+              ? `, with ${gustLabel} ${periodLabelFromIndexes(gustIndexes, gustMph.length)} (max gust ${gustMax.toFixed(1)} mph)`
+              : ` (max gust ${gustMax.toFixed(1)} mph)`;
+
+            if (level === "positive") {
+              if (["still", "very light", "light"].includes(dominant) && heaviest !== dominant) {
+                return `${sentenceCase(dominant)} most of the night (${windRange} mph), though ${heaviest} at times${gustPhrase}`;
+              }
+              const span = lightest === heaviest ? sentenceCase(lightest) : `${sentenceCase(lightest)} to ${heaviest}`;
+              return `${span} (${windRange} mph)${gustPhrase}`;
+            }
+
+            if (level === "negative") {
+              const heavyIndexes = windLabels.map((label, i) => ["heavy", "very heavy"].includes(label) ? i : -1).filter(i => i >= 0);
+              const heavyPeriod = periodLabelFromIndexes(heavyIndexes, windLabels.length);
+              if (heavyIndexes.length) {
+                return `${sentenceCase(heaviest)} wind ${heavyPeriod} (${windRange} mph)${gustPhrase}`;
+              }
+              if (gustMax >= 16) {
+                return `${sentenceCase(gustLabel)} ${periodLabelFromIndexes(gustIndexes, gustMph.length)} (max gust ${gustMax.toFixed(1)} mph); sustained wind ${windRange} mph`;
+              }
+              return `${sentenceCase(lightest === heaviest ? heaviest : `${lightest} to ${heaviest}`)} (${windRange} mph)${gustPhrase}`;
+            }
+
+            if (gustMax >= 16) {
+              return `${sentenceCase(lightest === heaviest ? heaviest : `${lightest} to ${heaviest}`)} (${windRange} mph), with ${gustLabel} ${periodLabelFromIndexes(gustIndexes, gustMph.length)} (max gust ${gustMax.toFixed(1)} mph)`;
+            }
+            return windMicNoiseDescriptor(windMph, gustMph);
+          }
+
+          function summarizeVisibilityCondition(visMiles, effect) {
+            const level = scoreEffectLevel(effect);
+            const visPairs = visMiles.map(visibilityLabelAndTip);
+            const labels = visPairs.map(x => x[0]);
+            const range = formatRange(visMiles, 1);
+            const poorIndexes = labels.map((label, i) => ["Poor", "Limited"].includes(label) ? i : -1).filter(i => i >= 0);
+            const clearIndexes = labels.map((label, i) => ["Clear", "Good"].includes(label) ? i : -1).filter(i => i >= 0);
+            if (level === "positive") {
+              const lead = clearIndexes.length >= labels.length * 0.65 ? "Mostly clear/good visibility" : "Good visibility at times";
+              const caveat = poorIndexes.length ? `; limited ${periodLabelFromIndexes(poorIndexes, labels.length)}` : "";
+              return `${lead} (${range} mi)${caveat}`;
+            }
+            if (level === "negative") {
+              const lead = poorIndexes.length >= labels.length * 0.65 ? "Limited/poor visibility" : `Limited visibility ${periodLabelFromIndexes(poorIndexes, labels.length)}`;
+              const caveat = clearIndexes.length ? `, improving ${periodLabelFromIndexes(clearIndexes, labels.length)}` : "";
+              return `${lead} (${range} mi)${caveat}`;
+            }
+            const unique = new Set(labels);
+            if (unique.size === 1) return `${labels[0]} visibility (${range} mi)`;
+            return `Mixed visibility (${range} mi)`;
+          }
+
+          function summarizePrecipitationCondition(precipValsMm, effect) {
+            const level = scoreEffectLevel(effect);
+            const hourlyIn = precipValsMm.map(mmToInches);
+            const totalMm = precipValsMm.reduce((sum, p) => sum + p, 0);
+            const wetIndexes = precipValsMm.map((mm, i) => mm >= 0.25 ? i : -1).filter(i => i >= 0);
+            const rainIndexes = precipValsMm.map((mm, i) => mm >= 1.0 ? i : -1).filter(i => i >= 0);
+            const rangeText = `hourly ${formatRange(hourlyIn, 2)} in; total ${formatPrecipInches(totalMm)} in (${totalMm.toFixed(1)} mm)`;
+            if (level === "positive") {
+              if (!wetIndexes.length) return `Dry or trace only (${rangeText})`;
+              return `Mostly dry, with precipitation ${periodLabelFromIndexes(wetIndexes, precipValsMm.length)} (${rangeText})`;
+            }
+            if (level === "negative") {
+              const indexes = rainIndexes.length ? rainIndexes : wetIndexes;
+              return `Precipitation ${periodLabelFromIndexes(indexes, precipValsMm.length)} (${rangeText})`;
+            }
+            return `Mixed precipitation signal (${rangeText})`;
+          }
+
+          function summarizeHumidityCondition(humidityVals, effect) {
+            const level = scoreEffectLevel(effect);
+            const range = formatRange(humidityVals, 0);
+            const labels = humidityVals.map(humidityLabel);
+            const dryIndexes = humidityVals.map((h, i) => h < 65 ? i : -1).filter(i => i >= 0);
+            const veryHumidIndexes = humidityVals.map((h, i) => h >= 90 ? i : -1).filter(i => i >= 0);
+            const humiditySpan = labelSpan(labels, ["Very humid", "Humid", "Moderate", "Dry"]);
+            if (level === "positive") return `Near favorable range (${range}% relative humidity)`;
+            if (level === "negative") {
+              if (veryHumidIndexes.length) return `Very humid ${periodLabelFromIndexes(veryHumidIndexes, humidityVals.length)} (${range}% relative humidity)`;
+              if (dryIndexes.length) return `Dry ${periodLabelFromIndexes(dryIndexes, humidityVals.length)} (${range}% relative humidity)`;
+            }
+            return `${humiditySpan} (${range}% relative humidity)`;
+          }
+
+          function summarizePressureCondition(values, effect) {
+            const level = scoreEffectLevel(effect);
+            const avg = values.reduce((a, b) => a + b, 0) / values.length;
+            const delta = values[values.length - 1] - values[0];
+            const span = Math.max(...values) - Math.min(...values);
+            const range = `${Math.min(...values).toFixed(1)}-${Math.max(...values).toFixed(1)} hPa; net ${delta >= 0 ? "+" : ""}${delta.toFixed(1)} hPa`;
+            const trend = delta >= 1.5 ? "rising" : delta <= -1.5 ? "falling" : "steady";
+            const stability = span <= 1.5 ? "stable" : span <= 3.5 ? "fairly stable" : "variable";
+            if (level === "positive") return `Favorable pressure range, ${stability} (${range})`;
+            if (level === "negative") {
+              const levelText = avg < 1010 ? "Low pressure" : avg >= 1035 ? "Extremely high pressure" : "Less favorable pressure";
+              return `${levelText}, ${trend === "steady" ? stability : `${trend}, ${stability}`} (${range})`;
+            }
+            return pressureDescription(values);
+          }
+
+          function summarizeCloudCondition(cloudVals, effect) {
+            const level = scoreEffectLevel(effect);
+            const cloudLabels = cloudVals.map(cloudLabel);
+            const range = formatRange(cloudVals, 0);
+            if (new Set(cloudLabels).size === 1) {
+              const label = cloudLabels[0];
+              if (level === "positive") return `${sentenceCase(label)} and favorable (${range}%)`;
+              if (level === "negative") return `${sentenceCase(label)} and less favorable (${range}%)`;
+              return `${sentenceCase(label)} throughout (${range}%)`;
+            }
+            if (level === "positive") return `Mostly favorable cloud cover (${range}%)`;
+            if (level === "negative") return `Less favorable cloud cover (${range}%)`;
+            return `Variable cloud cover (${range}%)`;
+          }
+
+          function summarizeTemperatureCondition(tempF, effect) {
+            const level = scoreEffectLevel(effect);
+            const range = formatRange(tempF, 0);
+            if (level === "positive") return `Near ideal seasonal range (${range}°F)`;
+            if (level === "negative") return `Outside ideal seasonal range (${range}°F)`;
+            return `${range}°F`;
+          }
+
           function summarizeNightConditions(night) {
             const weather = night.all_forecasts.map(r => r.weather);
+            const effects = factorEffectsForNight(night);
             const windMph = weather.map(w => mpsToMph(w.wind_speed_ground));
             const gustMph = weather.map(w => mpsToMph(w.gust_speed_ground));
             const humidityVals = weather.map(w => w.humidity);
@@ -1499,34 +1658,14 @@
             const pressureVals = weather.map(w => w.pressure);
             const tempF = weather.map(w => celsiusToFahrenheit(w.temp));
             const precipValsMm = weather.map(w => Math.max(0, Number(w.precipitation) || 0));
-            const precipTotalMm = precipValsMm.reduce((sum, p) => sum + p, 0);
-            const humiditySpan = labelSpan(humidityVals.map(humidityLabel), ["Very humid", "Humid", "Moderate", "Dry"]);
-            const visPairs = visMiles.map(visibilityLabelAndTip);
-            const visLabels = visPairs.map(x => x[0]);
-            const visTips = visPairs.map(x => x[1]);
-            let visDesc, visTip;
-            if (new Set(visLabels).size === 1) {
-              visDesc = visLabels[0];
-              visTip = visTips[0];
-            } else if (countTransitions(visLabels) >= 2) {
-              visDesc = "Variable";
-              visTip = visTips.includes("significant attenuation; recording quality likely reduced") ? "poorer periods may reduce clarity" : "mixed clarity";
-            } else {
-              visDesc = labelSpan(visLabels, ["Poor", "Limited", "Good", "Clear"]);
-              visTip = visTips.includes("significant attenuation; recording quality likely reduced") ? "poorer periods may reduce clarity" : "generally favorable for recording";
-            }
-            const cloudLabels = cloudVals.map(cloudLabel);
-            let cloudDesc = new Set(cloudLabels).size === 1
-              ? `${sentenceCase(cloudLabels[0])} throughout`
-              : `Going from ${cloudLabels[0]} to ${cloudLabels[cloudLabels.length - 1]}${countTransitions(cloudLabels) >= 2 ? " (variable in between)" : ""}`;
             return {
-              "Surface Wind": `${windMicNoiseDescriptor(windMph, gustMph)}: ${formatRange(windMph, 1)} mph (max gust ${Math.max(...gustMph).toFixed(1)} mph)`,
-              "Humidity": `${humiditySpan} (${formatRange(humidityVals, 0)}% relative humidity)`,
-              "Visibility": `${visDesc} (${formatRange(visMiles, 1)} mi); ${visTip}`,
-              "Cloud Cover": `${cloudDesc} (${formatRange(cloudVals, 0)}%)`,
-              "Pressure": pressureDescription(pressureVals),
-              "Temperature": `${formatRange(tempF, 0)}°F`,
-              "Precipitation": `Hourly ${formatRange(precipValsMm.map(mmToInches), 2)} in; total ${formatPrecipInches(precipTotalMm)} in (${precipTotalMm.toFixed(1)} mm)`,
+              "Surface Wind": summarizeWindCondition(windMph, gustMph, effects["Surface Wind"]),
+              "Humidity": summarizeHumidityCondition(humidityVals, effects["Humidity"]),
+              "Visibility": summarizeVisibilityCondition(visMiles, effects["Visibility"]),
+              "Cloud Cover": summarizeCloudCondition(cloudVals, effects["Cloud Cover"]),
+              "Pressure": summarizePressureCondition(pressureVals, effects["Pressure"]),
+              "Temperature": summarizeTemperatureCondition(tempF, effects["Temperature"]),
+              "Precipitation": summarizePrecipitationCondition(precipValsMm, effects["Precipitation"]),
               "Foliage Noise": els.foliageWeight?.selectedOptions?.[0]?.textContent || "User-selected foliage setting",
               "Insect Noise": els.insectNoise?.selectedOptions?.[0]?.textContent || "User-selected insect setting",
             };
@@ -1806,6 +1945,7 @@
                     peak_end: fmtTime(night.peak_end),
                     deploy_by: fmtTime(night.deploy_by),
                     main_concern: night.main_concern,
+                    top_acoustic_issue: topAcousticIssueDisplay(night.main_concern, score100To10(night.average_score), type === "historical"),
                     hours_count: night.hours_count,
                     visibility_estimated_any: night.all_forecasts.some(row => row.weather.visibility_is_estimated),
                     human_noise_context: localNoiseContext,
@@ -1859,12 +1999,13 @@
                     forecast_nights: forecastNights.map((night, i) => serializeNight(night, night.forecast_label || forecastNightLabel(i + 1), "forecast", localNoiseResources ? buildNoiseContextForNight(localNoiseResources, night) : null)),
                     historical_nights: historicalNights.map((night, i) => serializeNight(night, historicalNightLabel(i + 1), "historical", localNoiseResources ? buildNoiseContextForNight(localNoiseResources, night) : null)),
                   };
-                }
-            
-                function decisionSummaryLine(label, night) {
+                }                function decisionSummaryLine(label, night, historical = false) {
                   const rec = recommendationFlag(night.average_score);
                   const peak = `${fmtTime(night.peak_start)}-${fmtTime(night.peak_end)}`;
-                  return `${label.padEnd(16)} Expect: ${night.average_score >= 60 ? "Good audio" : night.average_score >= 45 ? "Moderate audio" : "Poor audio"}\n${"".padEnd(16)} Best: ${fmtTime(night.best_time)}  Peak: ${peak}\n${"".padEnd(16)} Acoustic summary: ${primaryConcernDisplay(night.main_concern)}`;
+                  const issue = topAcousticIssueDisplay(night.main_concern, score100To10(night.average_score), historical);
+                  return `${label.padEnd(16)} Expect: ${night.average_score >= 60 ? "Good audio" : night.average_score >= 45 ? "Moderate audio" : "Poor audio"}
+${"".padEnd(16)} Best: ${fmtTime(night.best_time)}  Peak: ${peak}
+${"".padEnd(16)} Top acoustic issue: ${issue}`;
                 }
             
                 function lowercaseFactorAfterColon(s) {
@@ -1873,6 +2014,21 @@
 
                 function primaryConcernDisplay(s) {
                   return sentenceCase(lowercaseFactorAfterColon(s));
+                }
+
+                function pastTenseConcernDisplay(s) {
+                  return String(s || "")
+                    .replace(/may scatter/g, "may have scattered")
+                    .replace(/may reduce/g, "may have reduced")
+                    .replace(/may blur/g, "may have blurred")
+                    .replace(/may mask/g, "may have masked")
+                    .replace(/can mask/g, "may have masked");
+                }
+
+                function topAcousticIssueDisplay(issue, score10, historical = false) {
+                  if (Number(score10) >= 8.0) return "None";
+                  const text = primaryConcernDisplay(issue);
+                  return historical ? pastTenseConcernDisplay(text) : text;
                 }
             
 
@@ -2288,7 +2444,7 @@
                     report += `   Acoustic Quality Score: ${formatScore10(night.average_score)}\n`;
                     report += `   Quality Expectation: ${recommendationFlag(night.average_score)}\n`;
                     report += `   Best Hour: ${fmtTime(night.best_time)}\n`;
-                    report += `   Acoustic summary: ${primaryConcernDisplay(night.main_concern)}\n`;
+                    report += `   Top acoustic issue: ${topAcousticIssueDisplay(night.main_concern, score100To10(night.average_score), false)}\n`;
                     report += "\n   Acoustic Conditions for the Night:\n";
                     Object.entries(nightConditions).forEach(([metric, details]) => {
                       report += `   • ${metric.padEnd(20)} ${details}\n`;
@@ -2311,7 +2467,7 @@
                       report += `   Acoustic Quality Score: ${formatScore10(night.average_score)}\n`;
                       report += `   Quality Expectation: ${recommendationFlag(night.average_score)}\n`;
                       report += `   Best Hour: ${fmtTime(night.best_time)}\n`;
-                      report += `   Acoustic summary: ${primaryConcernDisplay(night.main_concern)}\n`;
+                      report += `   Top acoustic issue: ${topAcousticIssueDisplay(night.main_concern, score100To10(night.average_score), true)}\n`;
                       report += "\n   Acoustic Conditions for the Night:\n";
                       Object.entries(nightConditions).forEach(([metric, details]) => {
                         report += `   • ${metric.padEnd(20)} ${details}\n`;
@@ -2402,7 +2558,7 @@
                         <tr><th>Nocturnal hourly starts</th><td>${escapeHtml(formatShortHourStartRange(night))}</td></tr>
                         <tr><th>Expectation</th><td>${formatQualityExpectationHtml(qualityParts.expectation)}</td></tr>
                         <tr><th>Best Hour</th><td>${escapeHtml(night.best_time)}</td></tr>
-                        <tr><th>Acoustic summary</th><td>${escapeHtml(primaryConcernDisplay(night.main_concern))}</td></tr>
+                        <tr><th>Top acoustic issue</th><td>${escapeHtml(night.top_acoustic_issue || topAcousticIssueDisplay(night.main_concern, night.average_score_10, isObserved))}</td></tr>
                         <tr><th>ID Cautions</th><td>${escapeHtml(night.id_expectation)}</td></tr>
                         ${night.human_noise_context ? `<tr><th>Human-made noise</th><td>${escapeHtml(localNoiseContextSummary(night.human_noise_context))}</td></tr>` : ""}
                       </tbody>
@@ -2531,7 +2687,7 @@
                     best_hour: fmtTime(night.best_time),
                     best_hour_score_10: score100To10(night.best_condition_score.overall_score).toFixed(1),
                     least_favorable_hour: fmtTime(night.least_favorable_time),
-                    main_concern: primaryConcernDisplay(night.main_concern),
+                    top_acoustic_issue: topAcousticIssueDisplay(night.main_concern, score100To10(night.average_score), true),
                   };
                   Object.entries(effects).forEach(([factor, value]) => {
                     base[`${factor.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}_effect_10`] = Number(value).toFixed(2);
