@@ -66,7 +66,7 @@ You can also click the map or drag the marker to set latitude and longitude. Map
 
 On page load, the tool makes a no-prompt IP geolocation request and uses the resulting city-level coordinates as the initial map location. Approximate coordinates are displayed with two decimal places and clearly labeled. If the lookup is unavailable, the built-in default remains in place. A location chosen or typed while the lookup is pending is never overwritten.
 
-For an exact recorder site, adjust the map or coordinates manually, or select **Use my precise location**. Precise browser location is opt-in and only requests permission after the button is selected. The app invokes the browser's native permission flow directly and provides browser-neutral messages for denied access, unavailable positioning, and timeouts. Manual and precise coordinates are displayed with five decimal places.
+For an exact recorder site, adjust the map or coordinates manually, or select **Use device location**. Device location is opt-in and only requests access after the button is selected. Browsers and devices may provide GPS, Wi-Fi, cellular, or approximate positioning, so successful results include the browser-reported accuracy. If location is unavailable, the current selection remains in place and optional non-sensitive request details identify the browser error category, secure-page status, and whether the page is embedded. Manual and device coordinates are displayed with five decimal places.
 
 Then set local noise conditions:
 
@@ -183,7 +183,7 @@ The historical export uses Open-Meteo historical weather data.
 
 Map selection uses Leaflet.
 
-Approximate startup location comes from the free Country API, using IP-derived city-level data. The service receives the visitor's IP address but states that it does not log requests. No precise browser geolocation permission is requested.
+Approximate startup location comes from the free Country API, using IP-derived city-level data. The service receives the visitor's IP address but states that it does not log requests. The startup lookup does not request access to device location.
 
 Human-made noise context is shown separately from the acoustic score. Road traffic context is estimated from nearby major OpenStreetMap roads. Aircraft context is estimated from nearby mapped or built-in major airports and runway alignment. The tool does not use live or scheduled flight data.
 

@@ -365,6 +365,16 @@
       flex: 0 0 auto;
     }
 
+    .location-permission-note {
+      margin: -.25rem 0 .75rem;
+    }
+
+    .location-diagnostic {
+      margin: -.25rem 0 .75rem;
+      padding-top: 0;
+      border-top: 0;
+    }
+
     @media (max-width: 640px) {
       .location-tools { align-items: stretch; flex-direction: column; }
       .location-tools button { width: 100%; }
@@ -465,8 +475,13 @@
         <label for="locationMap">Recording location</label>
         <div class="location-tools">
           <p id="locationSource" class="muted" aria-live="polite">Using the built-in default while an approximate location is checked.</p>
-          <button class="secondary" id="preciseLocationBtn" type="button">Use my precise location</button>
+          <button class="secondary" id="deviceLocationBtn" type="button">Use device location</button>
         </div>
+        <p class="muted location-permission-note">Your browser or device may ask for location access.</p>
+        <details class="location-diagnostic" id="locationDiagnostic" hidden>
+          <summary>Location request details</summary>
+          <p class="muted" id="locationDiagnosticText"></p>
+        </details>
         <div id="locationMap" role="application" aria-label="Click map to set latitude and longitude"></div>
         <p class="muted">Click the map or drag the marker to select latitude and longitude. Requires an internet connection.</p>
       </div>
@@ -733,7 +748,9 @@
       includeHumanNoise: document.getElementById("includeHumanNoise"),
       locationMap: document.getElementById("locationMap"),
       locationSource: document.getElementById("locationSource"),
-      preciseLocationBtn: document.getElementById("preciseLocationBtn"),
+      deviceLocationBtn: document.getElementById("deviceLocationBtn"),
+      locationDiagnostic: document.getElementById("locationDiagnostic"),
+      locationDiagnosticText: document.getElementById("locationDiagnosticText"),
       runBtn: document.getElementById("runBtn"),
       downloadTxtBtn: document.getElementById("downloadTxtBtn"),
       downloadJsonBtn: document.getElementById("downloadJsonBtn"),
@@ -2905,7 +2922,7 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                   if (source === "approximate") {
                     return "Approximate location based on your internet connection. Adjust the map or coordinates for your recorder site.";
                   }
-                  if (source === "precise") return "Precise browser location selected.";
+                  if (source === "device") return "Device location selected.";
                   if (source === "manual") return "Recording location selected manually.";
                   return "Using the built-in default location.";
                 }
@@ -2993,44 +3010,53 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                   }
                 }
 
-                function resetPreciseLocationButton() {
-                  els.preciseLocationBtn.disabled = false;
-                  els.preciseLocationBtn.textContent = "Use my precise location";
+                function resetDeviceLocationButton() {
+                  els.deviceLocationBtn.disabled = false;
+                  els.deviceLocationBtn.textContent = "Use device location";
                 }
 
-                function preciseLocationErrorMessage(error) {
-                  if (error?.code === 1) {
-                    return "Precise location was not allowed. Continue with the approximate location or select your recording site on the map.";
-                  }
-                  if (error?.code === 2) {
-                    return "Your browser could not determine your location. Check that location services are on for your device, then try again or select the recorder site on the map.";
-                  }
-                  if (error?.code === 3) {
-                    return "The location request timed out. Try again or select the recorder site on the map.";
-                  }
-                  return "Your browser could not provide a precise location. Try again or select the recorder site on the map.";
+                function hideLocationDiagnostic() {
+                  els.locationDiagnostic.hidden = true;
+                  els.locationDiagnostic.open = false;
+                  els.locationDiagnosticText.textContent = "";
                 }
 
-                function usePreciseLocation() {
+                function showLocationDiagnostic(error) {
+                  const categories = {
+                    1: "The browser reported that location permission was denied or blocked.",
+                    2: "The browser reported that a position could not be determined.",
+                    3: "The browser reported that the location request timed out.",
+                  };
+                  const category = categories[error?.code] || "The browser did not provide a recognized location error code.";
+                  const secure = window.isSecureContext ? "yes" : "no";
+                  const embedded = window.self !== window.top ? "yes" : "no";
+                  els.locationDiagnosticText.textContent = `${category} Secure page: ${secure}. Embedded page: ${embedded}.`;
+                  els.locationDiagnostic.hidden = false;
+                }
+
+                function useDeviceLocation() {
                   locationWasManuallyChanged = true;
                   if (!navigator.geolocation) {
-                    updateLocationSourceUi("Precise location is not supported by this browser. Keeping the current location.");
+                    updateLocationSourceUi("Device location is unavailable in this browser session. Your current location remains selected; adjust the map for your recorder site.");
+                    showLocationDiagnostic();
                     return;
                   }
-                  els.preciseLocationBtn.disabled = true;
-                  els.preciseLocationBtn.textContent = "Waiting for location permission…";
+                  hideLocationDiagnostic();
+                  els.deviceLocationBtn.disabled = true;
+                  els.deviceLocationBtn.textContent = "Requesting device location…";
                   navigator.geolocation.getCurrentPosition(
                     position => {
                       const { latitude: lat, longitude: lon, accuracy } = position.coords;
-                      if (setLocation(lat, lon, { updateInputs: true, centerMap: true, source: "precise" })) {
+                      if (setLocation(lat, lon, { updateInputs: true, centerMap: true, source: "device" })) {
                         const accuracyText = Number.isFinite(accuracy) ? ` Estimated accuracy: ${Math.round(accuracy)} m.` : "";
-                        updateLocationSourceUi(`${locationSourceMessage("precise")}${accuracyText}`);
+                        updateLocationSourceUi(`${locationSourceMessage("device")}${accuracyText}`);
                       }
-                      resetPreciseLocationButton();
+                      resetDeviceLocationButton();
                     },
                     error => {
-                      updateLocationSourceUi(preciseLocationErrorMessage(error));
-                      resetPreciseLocationButton();
+                      updateLocationSourceUi("Device location is unavailable in this browser session. Your current location remains selected; adjust the map for your recorder site.");
+                      showLocationDiagnostic(error);
+                      resetDeviceLocationButton();
                     },
                     { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
                   );
@@ -3099,7 +3125,7 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                 els.downloadTxtBtn.addEventListener("click", () => downloadFile(`${lastBaseName}.txt`, lastReport, "text/plain;charset=utf-8"));
                 els.downloadJsonBtn.addEventListener("click", () => downloadFile(`${lastBaseName}.json`, JSON.stringify(lastStructured, null, 2), "application/json;charset=utf-8"));
                 els.exportHistoryBtn.addEventListener("click", exportHistoricalScoring);
-                els.preciseLocationBtn.addEventListener("click", usePreciseLocation);
+                els.deviceLocationBtn.addEventListener("click", useDeviceLocation);
               </script>
             </body>
             </html>
