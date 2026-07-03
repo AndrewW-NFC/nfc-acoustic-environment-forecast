@@ -64,6 +64,8 @@ America/New_York
 
 You can also click the map or drag the marker to set latitude and longitude. Map selection requires an internet connection.
 
+On page load, the tool makes a no-prompt IP geolocation request and uses the resulting city-level coordinates as the initial map location. The coordinates are rounded to two decimal places. If the lookup is unavailable, the built-in default remains in place. A location chosen or typed while the lookup is pending is never overwritten.
+
 Then set local noise conditions:
 
 * **Foliage**
@@ -178,6 +180,8 @@ Night windows use astronomical twilight from sunrise-sunset.org.
 The historical export uses Open-Meteo historical weather data.
 
 Map selection uses Leaflet.
+
+Approximate startup location comes from the free Country API, using IP-derived city-level data. The service receives the visitor's IP address but states that it does not log requests. No precise browser geolocation permission is requested.
 
 Human-made noise context is shown separately from the acoustic score. Road traffic context is estimated from nearby major OpenStreetMap roads. Aircraft context is estimated from nearby mapped or built-in major airports and runway alignment. The tool does not use live or scheduled flight data.
 
