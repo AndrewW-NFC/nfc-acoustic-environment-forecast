@@ -427,11 +427,11 @@
       <div class="grid controls">
         <div>
           <label for="latitude">Latitude</label>
-          <input id="latitude" type="number" min="-90" max="90" step="0.000001" value="42.4206345" />
+          <input id="latitude" type="number" min="-90" max="90" step="0.00001" value="42.42063" />
         </div>
         <div>
           <label for="longitude">Longitude</label>
-          <input id="longitude" type="number" min="-180" max="180" step="0.000001" value="-71.1804986" />
+          <input id="longitude" type="number" min="-180" max="180" step="0.00001" value="-71.18050" />
         </div>
         <div class="timezone-field">
           <label for="timezone">Timezone</label>
@@ -2862,9 +2862,14 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                 let locationMarker = null;
                 let locationInputTimer = null;
                 let locationWasManuallyChanged = false;
+                const LOCATION_DECIMAL_PLACES = 5;
+
+                function formatCoordinate(value) {
+                  return Number(value).toFixed(LOCATION_DECIMAL_PLACES);
+                }
 
                 function recorderPopupHtml(lat, lon) {
-                  return `Recorder location<br><span class="muted">(${Number(lat).toFixed(7)}, ${Number(lon).toFixed(7)})</span>`;
+                  return `Recorder location<br><span class="muted">(${formatCoordinate(lat)}, ${formatCoordinate(lon)})</span>`;
                 }
 
                 function refreshRecorderPopup(lat, lon, open = false) {
@@ -2873,7 +2878,7 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                   if (locationMarker.getPopup()) {
                     locationMarker.setPopupContent(html);
                   } else {
-                    locationMarker.bindPopup(html);
+                    locationMarker.bindPopup(html, { autoPan: false });
                   }
                   if (open) locationMarker.openPopup();
                 }
@@ -2892,8 +2897,8 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                 function setLocation(lat, lon, { updateInputs = false, centerMap = false } = {}) {
                   if (!validCoordinates(lat, lon)) return false;
                   if (updateInputs) {
-                    els.lat.value = Number(lat).toFixed(6);
-                    els.lon.value = Number(lon).toFixed(6);
+                    els.lat.value = formatCoordinate(lat);
+                    els.lon.value = formatCoordinate(lon);
                   }
                   if (locationMarker) locationMarker.setLatLng([lat, lon]);
                   if (centerMap && locationMap) locationMap.setView([lat, lon], locationMap.getZoom());
@@ -2931,27 +2936,29 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                   setLocation(coordinates.lat, coordinates.lon, { updateInputs: true, centerMap: true });
                 }
 
-                function updateMapFromInputs() {
+                function updateMapFromInputs(normalizeInputs = false) {
                   const coordinates = coordinatesFromInputs();
-                  if (coordinates) setLocation(coordinates.lat, coordinates.lon, { centerMap: true });
+                  if (coordinates) {
+                    setLocation(coordinates.lat, coordinates.lon, { updateInputs: normalizeInputs, centerMap: true });
+                  }
                 }
 
                 function scheduleMapUpdateFromInputs() {
                   locationWasManuallyChanged = true;
                   clearTimeout(locationInputTimer);
-                  locationInputTimer = setTimeout(updateMapFromInputs, 250);
+                  locationInputTimer = setTimeout(() => updateMapFromInputs(true), 250);
                 }
 
                 function updateMapFromInputsImmediately() {
                   locationWasManuallyChanged = true;
                   clearTimeout(locationInputTimer);
-                  updateMapFromInputs();
+                  updateMapFromInputs(true);
                 }
 
                 function initLocationMap() {
                   if (!window.L || !els.locationMap) return;
-                  const lat = parseFloat(els.lat.value) || 42.4206345;
-                  const lon = parseFloat(els.lon.value) || -71.1804986;
+                  const lat = parseFloat(els.lat.value) || 42.42063;
+                  const lon = parseFloat(els.lon.value) || -71.18050;
                   locationMap = L.map(els.locationMap).setView([lat, lon], 12);
                   L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
                     maxZoom: 20,
@@ -2962,7 +2969,7 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                   refreshRecorderPopup(lat, lon, true);
                   locationMap.on("click", e => {
                     locationWasManuallyChanged = true;
-                    setLocation(e.latlng.lat, e.latlng.lng, { updateInputs: true });
+                    setLocation(e.latlng.lat, e.latlng.lng, { updateInputs: true, centerMap: true });
                   });
                   locationMarker.on("drag", e => {
                     locationWasManuallyChanged = true;
@@ -2971,12 +2978,14 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                   });
                   locationMarker.on("dragend", e => {
                     const ll = e.target.getLatLng();
-                    setLocation(ll.lat, ll.lng, { updateInputs: true });
+                    setLocation(ll.lat, ll.lng, { updateInputs: true, centerMap: true });
                   });
                   els.lat.addEventListener("input", scheduleMapUpdateFromInputs);
                   els.lon.addEventListener("input", scheduleMapUpdateFromInputs);
                   els.lat.addEventListener("change", updateMapFromInputsImmediately);
                   els.lon.addEventListener("change", updateMapFromInputsImmediately);
+                  els.lat.addEventListener("blur", updateMapFromInputsImmediately);
+                  els.lon.addEventListener("blur", updateMapFromInputsImmediately);
                   setTimeout(() => locationMap.invalidateSize(), 0);
                 }
 
