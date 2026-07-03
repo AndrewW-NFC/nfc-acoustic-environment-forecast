@@ -2993,14 +2993,49 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                   }
                 }
 
-                function usePreciseLocation() {
+                function resetPreciseLocationButton() {
+                  els.preciseLocationBtn.disabled = false;
+                  els.preciseLocationBtn.textContent = "Use my precise location";
+                }
+
+                function preciseLocationErrorMessage(error) {
+                  if (error?.code === 1) {
+                    return "Location access is off for this site. Select the site-controls or location icon beside the address bar, allow Location, then try again.";
+                  }
+                  if (error?.code === 2) {
+                    return "Your browser could not determine your location. Check that location services are on for your device, then try again or select the recorder site on the map.";
+                  }
+                  if (error?.code === 3) {
+                    return "The location request timed out. Try again or select the recorder site on the map.";
+                  }
+                  return "Your browser could not provide a precise location. Try again or select the recorder site on the map.";
+                }
+
+                async function usePreciseLocation() {
                   locationWasManuallyChanged = true;
                   if (!navigator.geolocation) {
                     updateLocationSourceUi("Precise location is not supported by this browser. Keeping the current location.");
                     return;
                   }
                   els.preciseLocationBtn.disabled = true;
-                  els.preciseLocationBtn.textContent = "Finding precise location…";
+                  els.preciseLocationBtn.textContent = "Checking location permission…";
+
+                  try {
+                    if (navigator.permissions?.query) {
+                      const permission = await navigator.permissions.query({ name: "geolocation" });
+                      if (permission.state === "denied") {
+                        updateLocationSourceUi(preciseLocationErrorMessage({ code: 1 }));
+                        resetPreciseLocationButton();
+                        return;
+                      }
+                    }
+                  } catch (_) {
+                    // Some browsers do not expose geolocation through the
+                    // Permissions API. Calling getCurrentPosition below still
+                    // gives them their normal native permission flow.
+                  }
+
+                  els.preciseLocationBtn.textContent = "Waiting for location permission…";
                   navigator.geolocation.getCurrentPosition(
                     position => {
                       const { latitude: lat, longitude: lon, accuracy } = position.coords;
@@ -3008,15 +3043,13 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                         const accuracyText = Number.isFinite(accuracy) ? ` Estimated accuracy: ${Math.round(accuracy)} m.` : "";
                         updateLocationSourceUi(`${locationSourceMessage("precise")}${accuracyText}`);
                       }
-                      els.preciseLocationBtn.disabled = false;
-                      els.preciseLocationBtn.textContent = "Use my precise location";
+                      resetPreciseLocationButton();
                     },
-                    () => {
-                      updateLocationSourceUi(`Precise location was unavailable. ${locationSourceMessage()}`);
-                      els.preciseLocationBtn.disabled = false;
-                      els.preciseLocationBtn.textContent = "Use my precise location";
+                    error => {
+                      updateLocationSourceUi(preciseLocationErrorMessage(error));
+                      resetPreciseLocationButton();
                     },
-                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
                   );
                 }
 
