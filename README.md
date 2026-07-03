@@ -64,7 +64,9 @@ America/New_York
 
 You can also click the map or drag the marker to set latitude and longitude. Map selection requires an internet connection.
 
-On page load, the tool makes a no-prompt IP geolocation request and uses the resulting city-level coordinates as the initial map location. The coordinates are rounded to two decimal places. If the lookup is unavailable, the built-in default remains in place. A location chosen or typed while the lookup is pending is never overwritten.
+On page load, the tool makes a no-prompt IP geolocation request and uses the resulting city-level coordinates as the initial map location. Approximate coordinates are displayed with two decimal places and clearly labeled. If the lookup is unavailable, the built-in default remains in place. A location chosen or typed while the lookup is pending is never overwritten.
+
+For an exact recorder site, adjust the map or coordinates manually, or select **Use my precise location**. Precise browser location is opt-in and only requests permission after the button is selected. Manual and precise coordinates are displayed with five decimal places.
 
 Then set local noise conditions:
 

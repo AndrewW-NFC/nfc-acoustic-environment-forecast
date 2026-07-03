@@ -348,6 +348,28 @@
       margin-top: 1rem;
     }
 
+    .location-tools {
+      display: flex;
+      gap: .75rem;
+      align-items: center;
+      justify-content: space-between;
+      margin: 0 0 .75rem;
+    }
+
+    .location-tools .muted {
+      margin: 0;
+    }
+
+    .location-tools button {
+      width: auto;
+      flex: 0 0 auto;
+    }
+
+    @media (max-width: 640px) {
+      .location-tools { align-items: stretch; flex-direction: column; }
+      .location-tools button { width: 100%; }
+    }
+
     #locationMap {
       height: 320px;
       width: 100%;
@@ -440,7 +462,11 @@
         </div>
       </div>
       <div class="map-wrap">
-        <label for="locationMap">Map-selected location</label>
+        <label for="locationMap">Recording location</label>
+        <div class="location-tools">
+          <p id="locationSource" class="muted" aria-live="polite">Using the built-in default while an approximate location is checked.</p>
+          <button class="secondary" id="preciseLocationBtn" type="button">Use my precise location</button>
+        </div>
         <div id="locationMap" role="application" aria-label="Click map to set latitude and longitude"></div>
         <p class="muted">Click the map or drag the marker to select latitude and longitude. Requires an internet connection.</p>
       </div>
@@ -706,6 +732,8 @@
       insectNoise: document.getElementById("insectNoise"),
       includeHumanNoise: document.getElementById("includeHumanNoise"),
       locationMap: document.getElementById("locationMap"),
+      locationSource: document.getElementById("locationSource"),
+      preciseLocationBtn: document.getElementById("preciseLocationBtn"),
       runBtn: document.getElementById("runBtn"),
       downloadTxtBtn: document.getElementById("downloadTxtBtn"),
       downloadJsonBtn: document.getElementById("downloadJsonBtn"),
@@ -2862,10 +2890,28 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                 let locationMarker = null;
                 let locationInputTimer = null;
                 let locationWasManuallyChanged = false;
+                let locationSource = "default";
                 const LOCATION_DECIMAL_PLACES = 5;
 
-                function formatCoordinate(value) {
-                  return Number(value).toFixed(LOCATION_DECIMAL_PLACES);
+                function locationDecimalPlaces(source = locationSource) {
+                  return source === "approximate" ? 2 : LOCATION_DECIMAL_PLACES;
+                }
+
+                function formatCoordinate(value, source = locationSource) {
+                  return Number(value).toFixed(locationDecimalPlaces(source));
+                }
+
+                function locationSourceMessage(source = locationSource) {
+                  if (source === "approximate") {
+                    return "Approximate location based on your internet connection. Adjust the map or coordinates for your recorder site.";
+                  }
+                  if (source === "precise") return "Precise browser location selected.";
+                  if (source === "manual") return "Recording location selected manually.";
+                  return "Using the built-in default location.";
+                }
+
+                function updateLocationSourceUi(message = locationSourceMessage()) {
+                  if (els.locationSource) els.locationSource.textContent = message;
                 }
 
                 function recorderPopupHtml(lat, lon) {
@@ -2894,8 +2940,12 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                   return validCoordinates(lat, lon) ? { lat, lon } : null;
                 }
 
-                function setLocation(lat, lon, { updateInputs = false, centerMap = false } = {}) {
+                function setLocation(lat, lon, { updateInputs = false, centerMap = false, source = null } = {}) {
                   if (!validCoordinates(lat, lon)) return false;
+                  if (source) {
+                    locationSource = source;
+                    updateLocationSourceUi();
+                  }
                   if (updateInputs) {
                     els.lat.value = formatCoordinate(lat);
                     els.lon.value = formatCoordinate(lon);
@@ -2933,14 +2983,41 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                 async function initializeApproximateLocation() {
                   const coordinates = await detectApproximateLocation();
                   if (!coordinates || locationWasManuallyChanged) return;
-                  setLocation(coordinates.lat, coordinates.lon, { updateInputs: true, centerMap: true });
+                  setLocation(coordinates.lat, coordinates.lon, { updateInputs: true, centerMap: true, source: "approximate" });
                 }
 
                 function updateMapFromInputs(normalizeInputs = false) {
                   const coordinates = coordinatesFromInputs();
                   if (coordinates) {
-                    setLocation(coordinates.lat, coordinates.lon, { updateInputs: normalizeInputs, centerMap: true });
+                    setLocation(coordinates.lat, coordinates.lon, { updateInputs: normalizeInputs, centerMap: true, source: "manual" });
                   }
+                }
+
+                function usePreciseLocation() {
+                  locationWasManuallyChanged = true;
+                  if (!navigator.geolocation) {
+                    updateLocationSourceUi("Precise location is not supported by this browser. Keeping the current location.");
+                    return;
+                  }
+                  els.preciseLocationBtn.disabled = true;
+                  els.preciseLocationBtn.textContent = "Finding precise location…";
+                  navigator.geolocation.getCurrentPosition(
+                    position => {
+                      const { latitude: lat, longitude: lon, accuracy } = position.coords;
+                      if (setLocation(lat, lon, { updateInputs: true, centerMap: true, source: "precise" })) {
+                        const accuracyText = Number.isFinite(accuracy) ? ` Estimated accuracy: ${Math.round(accuracy)} m.` : "";
+                        updateLocationSourceUi(`${locationSourceMessage("precise")}${accuracyText}`);
+                      }
+                      els.preciseLocationBtn.disabled = false;
+                      els.preciseLocationBtn.textContent = "Use my precise location";
+                    },
+                    () => {
+                      updateLocationSourceUi(`Precise location was unavailable. ${locationSourceMessage()}`);
+                      els.preciseLocationBtn.disabled = false;
+                      els.preciseLocationBtn.textContent = "Use my precise location";
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                  );
                 }
 
                 function scheduleMapUpdateFromInputs() {
@@ -2969,16 +3046,16 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                   refreshRecorderPopup(lat, lon, true);
                   locationMap.on("click", e => {
                     locationWasManuallyChanged = true;
-                    setLocation(e.latlng.lat, e.latlng.lng, { updateInputs: true, centerMap: true });
+                    setLocation(e.latlng.lat, e.latlng.lng, { updateInputs: true, centerMap: true, source: "manual" });
                   });
                   locationMarker.on("drag", e => {
                     locationWasManuallyChanged = true;
                     const ll = e.target.getLatLng();
-                    setLocation(ll.lat, ll.lng, { updateInputs: true });
+                    setLocation(ll.lat, ll.lng, { updateInputs: true, source: "manual" });
                   });
                   locationMarker.on("dragend", e => {
                     const ll = e.target.getLatLng();
-                    setLocation(ll.lat, ll.lng, { updateInputs: true, centerMap: true });
+                    setLocation(ll.lat, ll.lng, { updateInputs: true, centerMap: true, source: "manual" });
                   });
                   els.lat.addEventListener("input", scheduleMapUpdateFromInputs);
                   els.lon.addEventListener("input", scheduleMapUpdateFromInputs);
@@ -3006,6 +3083,7 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                 els.downloadTxtBtn.addEventListener("click", () => downloadFile(`${lastBaseName}.txt`, lastReport, "text/plain;charset=utf-8"));
                 els.downloadJsonBtn.addEventListener("click", () => downloadFile(`${lastBaseName}.json`, JSON.stringify(lastStructured, null, 2), "application/json;charset=utf-8"));
                 els.exportHistoryBtn.addEventListener("click", exportHistoricalScoring);
+                els.preciseLocationBtn.addEventListener("click", usePreciseLocation);
               </script>
             </body>
             </html>
