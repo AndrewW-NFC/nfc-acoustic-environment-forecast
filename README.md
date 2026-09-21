@@ -243,3 +243,7 @@ No build command is required.
 MIT License.
 
 See `LICENSE` for details.
+
+## Comparable overnight precipitation
+
+Completed nights now have a separate 18:00–06:00 local precipitation estimate using the same pinned Open-Meteo model as the companion project. Reports include coverage, source, retrieval time, and coordinates. Missing hours prevent a complete total; these are model estimates, not rain-gauge observations. See the [shared rainfall contract](rainfall-contract.md) for usage and export details.

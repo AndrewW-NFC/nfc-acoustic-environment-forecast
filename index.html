@@ -532,7 +532,7 @@
     </section>
 
     <section id="observedSection" class="section-block" aria-live="polite" hidden>
-      <h2>Observed acoustic environment</h2>
+      <h2>Historical acoustic estimates</h2>
       <div id="observedSummary" class="grid summary"></div>
     </section>
 
@@ -604,6 +604,7 @@
       <details>
         <summary>Data sources and night windows</summary>
         <ul>
+          <li><strong>Overnight precipitation:</strong> Completed nights have a separate 18:00–06:00 local model estimate, using the same source and intervals as NFC Tools. Missing hours prevent a complete total. This is total precipitation water equivalent, not a rain-gauge observation. The twilight scoring subtotal covers a different window.</li>
           <li><strong>Weather data:</strong> 10 m wind is from Open-Meteo. Near-ground wind is estimated from the same profile. Visibility uses API data when available; otherwise, it is estimated from precipitation and cloud cover.</li>
           <li><strong>Night windows:</strong> Night windows use astronomical twilight from sunrise-sunset.org.</li>
           <li><strong>Historical export:</strong> The historical export uses Open-Meteo Historical Weather API data, which is available back to 1940 for many locations. The browser UI caps a single export at 366 evening dates.</li>
@@ -628,8 +629,9 @@
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="precipitation.js"></script>
   <script>
-    const MODEL_VERSION = "2.2.12";
+    const MODEL_VERSION = "2.2.13";
 
     // ============================================================================
     // CUSTOMIZATION: Acoustic environment scoring baselines
@@ -1051,7 +1053,8 @@
         const windGround = estimateGroundWind(wind10);
         const gustGround = sanitizeGust(windGround, estimateGroundWind(gust10));
         const cloud = Number(hourly.cloud_cover?.[i] ?? 0);
-        const precip = Number(hourly.precipitation?.[i] ?? 0);
+        const rawPrecip = hourly.precipitation?.[i];
+        const precip = typeof rawPrecip === "number" && Number.isFinite(rawPrecip) && rawPrecip >= 0 ? rawPrecip : null;
         const pressure = Number(hourly.surface_pressure?.[i] ?? 1013);
         const hasVisibility = hourly.visibility && hourly.visibility[i] != null;
         const visibility = hasVisibility ? Number(hourly.visibility[i]) : estimateVisibility(precip, cloud);
@@ -1362,7 +1365,8 @@
           }
 
           function scorePrecipitation(p) {
-            const amount = Math.max(0, Number(p) || 0);
+            if (p == null || !Number.isFinite(p)) return [SCORING_DEDUCTIONS["Precipitation"] / 2, "Precipitation unavailable; neutral contribution, score provisional"];
+            const amount = Math.max(0, p);
             const inches = formatPrecipInches(amount);
             if (amount < 0.02) return [0.0, "No precipitation"];
             if (amount < 0.25) return [0.25, `Trace precipitation (${inches} in)`];
@@ -1621,12 +1625,13 @@
           }
 
           function summarizePrecipitationCondition(precipValsMm, effect) {
+            if (precipValsMm.some(p => p == null || !Number.isFinite(p))) return "Precipitation unavailable for some scoring hours; total unavailable, score provisional";
             const level = scoreEffectLevel(effect);
             const hourlyIn = precipValsMm.map(mmToInches);
             const totalMm = precipValsMm.reduce((sum, p) => sum + p, 0);
             const wetIndexes = precipValsMm.map((mm, i) => mm >= 0.25 ? i : -1).filter(i => i >= 0);
             const rainIndexes = precipValsMm.map((mm, i) => mm >= 1.0 ? i : -1).filter(i => i >= 0);
-            const rangeText = `hourly ${formatRange(hourlyIn, 2)} in; total ${formatPrecipInches(totalMm)} in (${totalMm.toFixed(1)} mm)`;
+            const rangeText = `hourly ${formatRange(hourlyIn, 2)} in; scoring-interval subtotal ${formatPrecipInches(totalMm)} in (${totalMm.toFixed(1)} mm)`;
             if (level === "positive") {
               if (!wetIndexes.length) return `Dry or trace only (${rangeText})`;
               return `Mostly dry, with precipitation ${periodLabelFromIndexes(wetIndexes, precipValsMm.length)} (${rangeText})`;
@@ -1702,7 +1707,7 @@
             const cloudVals = weather.map(w => w.cloud_cover);
             const pressureVals = weather.map(w => w.pressure);
             const tempF = weather.map(w => celsiusToFahrenheit(w.temp));
-            const precipValsMm = weather.map(w => Math.max(0, Number(w.precipitation) || 0));
+            const precipValsMm = weather.map(w => w.precipitation);
             return {
               "Surface Wind": summarizeWindCondition(windMph, gustMph, effects["Surface Wind"]),
               "Humidity": summarizeHumidityCondition(humidityVals, effects["Humidity"]),
@@ -1919,7 +1924,7 @@
               gust_speed_ground_mph: Number(mpsToMph(w.gust_speed_ground).toFixed(1)),
               cloud_cover_pct: w.cloud_cover,
               precipitation_mm: w.precipitation,
-              precipitation_in: Number(mmToInches(w.precipitation).toFixed(3)),
+              precipitation_in: w.precipitation == null ? null : Number(mmToInches(w.precipitation).toFixed(6)),
               pressure_hpa: w.pressure,
               visibility_m: w.visibility,
               visibility_mi: Number(metersToMiles(w.visibility).toFixed(2)),
@@ -1973,6 +1978,8 @@
                   return {
                     type,
                     label,
+                    precipitation_summary: night.precipitation_summary || null,
+                    score_provisional: night.all_forecasts.some(r => r.weather.precipitation == null),
                     window_start: localIso(night.window_start),
                     window_end: localIso(night.window_end),
                     twilight_start: localIso(night.twilight_start),
@@ -2502,11 +2509,12 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
             
                   if (historicalNights.length) {
                     report += `\n${"=".repeat(78)}\n`;
-                    report += "OBSERVED CONDITIONS (Previous 3 Night Windows)\n";
+                    report += "HISTORICAL MODEL ESTIMATES (Previous 3 Night Windows)\n";
                     report += `${"=".repeat(78)}\n`;
                     historicalNights.forEach((night, i) => {
                       const labelText = stripQualityQualifier(recommendationLinesForNight(night, true));
                       const nightConditions = summarizeNightConditions(night);
+                      report += `\n   Overnight precipitation: ${OvernightPrecipitation.summaryText(night.precipitation_summary)}\n`;
                       report += `\n${i + 1}. ${historicalNightLabel(i + 1)}: ${fmtDateTime(night.twilight_start)} (Dusk hour) → ${fmtDateTime(night.twilight_end)} (Dawn hour)\n`;
                       report += `   ${labelText}\n`;
                       report += `   Acoustic Quality Score: ${formatScore10(night.average_score)}\n`;
@@ -2600,6 +2608,8 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                     <div class="score">${escapeHtml(night.average_score_10.toFixed(1))}/10</div>
                     <table>
                       <tbody>
+                        ${night.precipitation_summary ? `<tr><th>Overnight precipitation</th><td>${escapeHtml(OvernightPrecipitation.summaryText(night.precipitation_summary))}</td></tr>` : ""}
+                        ${night.score_provisional ? `<tr><th>Data coverage</th><td>Precipitation missing; acoustic score is provisional.</td></tr>` : ""}
                         <tr><th>Nocturnal hourly starts</th><td>${escapeHtml(formatShortHourStartRange(night))}</td></tr>
                         <tr><th>Expectation</th><td>${formatQualityExpectationHtml(qualityParts.expectation)}</td></tr>
                         <tr><th>Best Hour</th><td>${escapeHtml(night.best_time)}</td></tr>
@@ -2721,6 +2731,8 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                   const effects = factorEffectsForNight(night);
                   const base = {
                     row_type: "night_summary",
+                    score_provisional: night.all_forecasts.some(r => r.weather.precipitation == null),
+                    ...Object.fromEntries(Object.entries(night.precipitation_summary || {}).filter(([k]) => k !== "intervals").map(([k, v]) => [`overnight_${k}`, v])),
                     night_date: night.night_date,
                     twilight_start: localIso(night.twilight_start),
                     twilight_end: localIso(night.twilight_end),
@@ -2738,6 +2750,12 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                     base[`${factor.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}_effect_10`] = Number(value).toFixed(2);
                   });
                   const rows = [base];
+                  if (includeHourlyRows && night.precipitation_summary) {
+                    for (const interval of night.precipitation_summary.intervals) rows.push({
+                      row_type: "overnight_precipitation_hour", night_date: night.night_date,
+                      ...interval, source: night.precipitation_summary.source, model: night.precipitation_summary.model,
+                    });
+                  }
                   if (includeHourlyRows) {
                     night.all_forecasts.forEach(row => {
                       const w = row.weather;
@@ -2756,7 +2774,8 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                         wind_10m_mph: mpsToMph(w.wind_speed_10m).toFixed(1),
                         gust_10m_mph: mpsToMph(w.gust_speed_10m).toFixed(1),
                         wind_direction_10m_compass: compassDirection(w.wind_direction_10m),
-                        precipitation_in: mmToInches(w.precipitation).toFixed(3),
+                        precipitation_mm: w.precipitation,
+                        precipitation_in: w.precipitation == null ? null : mmToInches(w.precipitation).toFixed(6),
                         visibility_mi: metersToMiles(w.visibility).toFixed(2),
                         cloud_cover_pct: w.cloud_cover,
                         pressure_hpa: w.pressure,
@@ -2815,6 +2834,7 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                     const nightsAll = await analyzeNightWindows(lat, lon, metrics, false, timezone);
                     const nights = nightsAll.filter(n => n.night_date >= startDate && n.night_date <= endDate);
                     if (!nights.length) throw new Error("No night windows were found for that date range.");
+                    await OvernightPrecipitation.fetchSummaries(nights, lat, lon, timezone);
                     const structured = {
                       model_version: MODEL_VERSION,
                       generated_at: localIso(new Date()),
@@ -2881,6 +2901,7 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                     setStatus("Scoring night windows...");
                     const forecastNights = await getBestNights(lat, lon, forecastMetrics, forecastDays, timezone);
                     const historicalNights = await getHistoricalNights(lat, lon, historicalMetrics, 3, timezone);
+                    await OvernightPrecipitation.fetchSummaries(historicalNights, lat, lon, timezone);
                     let localNoiseResources = null;
                     if (els.includeHumanNoise.checked) {
                       setStatus("Checking nearby roads, airports, and runway corridors", true);
@@ -2893,7 +2914,7 @@ ${"".padEnd(16)} Top acoustic issue: ${issue}`;
                     els.downloadTxtBtn.disabled = false;
                     els.downloadJsonBtn.disabled = false;
                     const elapsedSecs = ((performance.now() - processStart) / 1000).toFixed(1);
-                    setStatus(`Done (took ${elapsedSecs} secs). Generated ${pluralizeNightCount(forecastNights.length, "forecast")} and ${pluralizeNightCount(historicalNights.length, "observed")}${els.includeHumanNoise.checked ? " with human-made noise context" : ""}.`);
+                    setStatus(`Done (took ${elapsedSecs} secs). Generated ${pluralizeNightCount(forecastNights.length, "forecast")} and ${pluralizeNightCount(historicalNights.length, "historical")}${els.includeHumanNoise.checked ? " with human-made noise context" : ""}.`);
                   } catch (err) {
                     console.error(err);
                     setStatus(`Error: ${err.message}. If this is a browser CORS or privacy-blocking issue, try another browser or host the file on a simple static web server.`);
