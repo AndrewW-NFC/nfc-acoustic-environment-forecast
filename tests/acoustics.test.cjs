@@ -57,3 +57,19 @@ test('weather parsing rejects unsupported units and preserves missing data',()=>
   c.payload.hourly_units={};r=vm.runInContext('parseHourlyPayload(payload,false)[0]',c);
   assert.equal(r.temp,null);assert.equal(r.pressure,null);assert.equal(r.wind_speed_10m,null);assert.equal(r.precipitation,null);
 });
+test('plain recording notes compare only complete, separated absorption ranges',()=>{
+  const c=app();
+  const night=(min,max,available=2)=>({summary:{
+    absorption:[2000,4000,6000,8000,10000].map(hz=>({hz,min,max,available_hours:available,total_hours:2})),
+    wind_10m_ms:{min:0,max:3,available_hours:2,total_hours:2},
+    precipitation:{positive_intervals:0,available_intervals:2,total_intervals:2}}});
+  c.n=night(1,2);c.other=night(3,4);
+  const notes=()=>vm.runInContext('recordingNotes(n,[n,other])',c);
+  assert.match(notes()[0].text,/absorb less/);
+  c.other=night(1.5,4);assert.match(notes()[0].text,/do not single out/);
+  c.other=night(3,4,1);assert.doesNotMatch(notes()[0].text,/absorb less/);
+  c.n=night(1,2,1);assert.match(notes()[0].text,/missing/);
+  c.n.summary.precipitation.available_intervals=0;assert.match(notes()[2].text,/data are missing/);
+  c.n.summary.precipitation.available_intervals=1;assert.match(notes()[2].text,/Some hours are missing/);
+  c.n.summary.precipitation.positive_intervals=1;assert.match(notes()[2].text,/If it falls as rain/);
+});

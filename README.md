@@ -10,7 +10,7 @@ Compare conditional atmospheric absorption coefficients and model-derived record
 - User-selected foliage/insect context and optional nearby mapped roads/airports.
 - Expandable hourly details and TXT/JSON reports; historical CSV/JSON exports.
 
-The main cards are concise. All outputs distinguish model estimates, conditional calculations and user settings. Nightly ranges show available-hour variation, not uncertainty bounds. No forecast is guaranteed accurate. See [acoustic-model.md](acoustic-model.md) for assumptions and schema details.
+The main cards explain sound lost in the air, wind noise, and possible wet-weather noise in plain language. Calculations and hourly measurements sit inside Details. A night is described as having less or more near-ground absorption only when its complete hourly ranges separate from every other displayed night at every modeled frequency; this is not a recording-quality ranking. All outputs distinguish model estimates, conditional calculations and user settings. Nightly ranges show available-hour variation, not uncertainty bounds. No forecast is guaranteed accurate. See [acoustic-model.md](acoustic-model.md) for assumptions and schema details.
 
 ## Use
 

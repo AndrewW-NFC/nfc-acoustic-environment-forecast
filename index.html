@@ -450,7 +450,7 @@
 <body>
   <header>
     <h1>NFC acoustic environment forecast</h1>
-    <p class="lede">Compare conditional air-absorption estimates and potential recording-interference inputs for the next three nights.</p>
+    <p class="lede">What might get in the way of clear bird calls tonight and over the next two nights?</p>
     <p class="lede">It does not forecast bird activity or migration. Such forecasts are available from <a href="https://birdcast.org/migration-tools/migration-forecast-maps/" target="_blank" rel="noopener noreferrer">BirdCast</a>.</p>
   </header>
 
@@ -474,7 +474,7 @@
       <div class="grid controls">
         <div><label for="microphoneHeight">Microphone height above ground (m)</label>
           <input id="microphoneHeight" type="number" min="0.5" max="30" step="0.1" value="2" aria-describedby="heightHelp" />
-          <p id="heightHelp" class="muted">Default: 2 m (6.6 ft). Saved as site information; wind is reported at the weather model’s 10 m reference height.</p></div>
+          <p id="heightHelp" class="muted">Default: 2 m (6.6 ft). Saved for your setup; it does not yet change the forecast.</p></div>
       </div>
       <div class="map-wrap">
         <label for="locationMap">Recording location</label>
@@ -501,7 +501,7 @@
             <option value="1.60">Heavy / dense trees near mic</option>
           </select>
         </div>
-        <p id="foliageHelp" class="muted">Leafed-out trees can add rustle and intermittent broadband noise in wind, raising the noise floor and masking faint calls or fine spectrogram detail.</p>
+        <p id="foliageHelp" class="muted">Leaves rustling in the wind can cover faint bird calls.</p>
       </div>
       <div class="foliage-controls">
         <div>
@@ -512,7 +512,7 @@
             <option value="heavy">Heavy / dense insect chorus</option>
           </select>
         </div>
-        <p id="insectHelp" class="muted">Some insect sound bands and pulses can mask NFC structure on the spectrogram.</p>
+        <p id="insectHelp" class="muted">Insect sounds can overlap bird calls, making them harder to hear or pick out in a spectrogram.</p>
       </div>
       <div class="option-row">
         <input id="includeHumanNoise" type="checkbox" />
@@ -532,13 +532,13 @@
 
 
     <section id="forecastSection" class="section-block" aria-live="polite" hidden>
-      <h2>Acoustic conditions</h2>
-      <p class="muted">Model-derived conditions, not a prediction of call audibility or recording quality.</p>
+      <h2>Your next three nights</h2>
+      <p class="muted">These notes explain possible obstacles to clear recordings. We cannot yet reliably rate how clear the calls will be.</p>
       <div id="forecastSummary" class="grid summary"></div>
     </section>
 
     <section id="observedSection" class="section-block" aria-live="polite" hidden>
-      <h2>Historical acoustic estimates</h2>
+      <h2>Previous nights</h2>
       <div id="observedSummary" class="grid summary"></div>
     </section>
 
@@ -1379,11 +1379,45 @@
                   ];
                 }
 
+                function recordingNotes(n, peers=[]) {
+                  const p=n.summary.precipitation;
+                  const wet = !p.available_intervals
+                    ? "Precipitation data are missing, so we cannot check this source of noise."
+                    : p.positive_intervals
+                      ? "Wet weather is forecast during this night. If it falls as rain, tapping and splashing near the microphone could cover faint calls."
+                      : "No precipitation is forecast in the available hours. Other noise could still cover calls.";
+                  const coverage=p.available_intervals && p.available_intervals<p.total_intervals
+                    ? " Some hours are missing." : "";
+                  const wind=n.summary.wind_10m_ms;
+                  const windText=wind.min==null
+                    ? "Wind data are missing. Wind at the microphone and rustling leaves could still cover calls."
+                    : `Forecast wind: ${rangeText(wind,"mph",2.236936)}. Wind and rustling leaves can cover faint calls; shelter and a windscreen can help.`;
+                  const others=peers.filter(other=>other!==n);
+                  const complete=night=>night.summary.absorption.every(f=>f.total_hours>0 && f.available_hours===f.total_hours);
+                  let airLabel="Sound lost in the air";
+                  let air="Air absorbs some of a call’s sound as it travels. Without knowing how far away the bird is, we cannot say how much will reach your microphone.";
+                  if(!n.summary.absorption.some(f=>f.available_hours)) air="Air-absorption estimates are unavailable because weather inputs are missing or outside the calculation’s supported range.";
+                  else if(!complete(n)) air="Some air-absorption estimates are missing. There is not enough coverage to compare this night with the others.";
+                  else if(others.length && others.every(complete)) {
+                    const lower=others.every(other=>n.summary.absorption.every((f,i)=>f.max<other.summary.absorption[i].min));
+                    const higher=others.every(other=>n.summary.absorption.every((f,i)=>f.min>other.summary.absorption[i].max));
+                    airLabel=lower ? "Less sound lost in the air" : higher ? "More sound lost in the air" : airLabel;
+                    air=lower
+                      ? "The air near the ground is expected to absorb less sound than on the other nights shown. This is one part of sound travel, not a promise of clearer calls."
+                      : higher
+                        ? "The air near the ground is expected to absorb more sound than on the other nights shown. This could weaken calls travelling through that air; the effect depends on their distance."
+                        : "These estimates do not single out a night when air would absorb consistently less sound. Bird distance also affects how faint calls become.";
+                  }
+                  return [{label:airLabel,text:air},{label:"Wind noise",text:windText},{label:"Rain or snow",text:wet+coverage}];
+                }
                 function generateReport(lat,lon,timezone,regionName,forecastNights,historicalNights,localNoiseResources=null) {
                   const data=generateStructuredOutput(lat,lon,timezone,regionName,forecastNights,historicalNights,localNoiseResources);
-                  return [`NFC acoustic conditions — ${regionName} (${timezone})`,...acousticAssumptions,
-                    ...[...data.forecast_nights,...data.historical_nights].map(n=>[
-                      `\n${n.label}: ${n.window_start}–${n.window_end} (returned hourly timestamps)`,
+                  return [`Bird-call recording — ${regionName} (${timezone})`,
+                    "Possible obstacles to clear recordings; not an overall recording-quality rating.",
+                    ...[data.forecast_nights,data.historical_nights].flatMap(group=>group.map(n=>[
+                      `\n${n.label}: ${n.window_start}–${n.window_end}`,
+                      ...recordingNotes(n,group).map(note=>`${note.label}: ${note.text}`),
+                      "\nDetails",
                       ...n.summary.absorption.map(f=>`${f.hz/1000} kHz coefficient: ${rangeText(f,"dB/100 m")}`),
                       `10 m wind: ${rangeText(n.summary.wind_10m_ms,"mph",2.236936)}; gusts: ${rangeText(n.summary.gust_10m_ms,"mph",2.236936)}`,
                       precipitationText(n.summary.precipitation),
@@ -1392,15 +1426,14 @@
                       ...(n.precipitation_summary?[OvernightPrecipitation.summaryText(n.precipitation_summary)]:[]),
                       ...(n.human_noise_context?[localNoiseContextSummary(n.human_noise_context)]:[]),
                       ...n.hourly.map(h=>`${h.timestamp}: ${hourText(h)}`)
-                    ].join("\n"))].join("\n");
+                    ].join("\n"))),"\nHow to read the calculations",...acousticAssumptions].join("\n");
                 }
-                function renderNightCard(n) {
+                function renderNightCard(n, peers=[]) {
                   const card=document.createElement("article");card.className="card night-card";
                   card.innerHTML=`<h3>${escapeHtml(n.label)}</h3>
-                    <p><strong>Air absorption at 6 kHz</strong><br>${escapeHtml(rangeText(n.summary.absorption[2],"dB/100 m"))}</p>
-                    <p class="muted">Calculated at near-surface conditions. This is a coefficient, not the loss of an actual bird call.</p>
-                    <p><strong>Wind at 10 m</strong><br>${escapeHtml(rangeText(n.summary.wind_10m_ms,"mph",2.236936))}<br>Gusts: ${escapeHtml(rangeText(n.summary.gust_10m_ms,"mph",2.236936))}</p>
-                    <p><strong>Precipitation</strong><br>${escapeHtml(precipitationText(n.summary.precipitation))}</p>
+                    ${recordingNotes(n,peers).map(note=>`<p><strong>${escapeHtml(note.label)}</strong><br>${escapeHtml(note.text)}</p>`).join("")}
+                    <details><summary>Details</summary>
+                    <p class="muted">Air absorption is a coefficient, not the loss of an actual bird call. Wind measurements below refer to 10 m above ground, not your microphone.</p>
                     <details><summary>Through the night</summary>
                       <p class="muted">${escapeHtml(n.window_start.replace("T"," "))}–${escapeHtml(n.window_end.replace("T"," "))}: returned hourly timestamps. Precipitation refers to the hour ending at each timestamp; wind and absorption inputs refer to that timestamp.</p>
                       ${n.hourly.map(h=>`<p><strong>${escapeHtml(h.timestamp.slice(11,16))}</strong> ${escapeHtml(hourText(h))}</p>`).join("")}</details>
@@ -1411,7 +1444,7 @@
                       <p>Wind can cause microphone noise and leaf rustle. Precipitation impacts and insect sounds can mask calls. Noise levels are not predicted.</p>
                       ${n.human_noise_context?`<p>${escapeHtml(localNoiseContextSummary(n.human_noise_context))}</p>`:""}
                       ${n.precipitation_summary?`<p>${escapeHtml(OvernightPrecipitation.summaryText(n.precipitation_summary))}</p>`:""}
-                      ${acousticAssumptions.map(t=>`<p>${escapeHtml(t)}</p>`).join("")}</details>`;
+                      ${acousticAssumptions.map(t=>`<p>${escapeHtml(t)}</p>`).join("")}</details></details>`;
                   return card;
                 }
 
@@ -1426,7 +1459,7 @@
                   });
 
                   nights.forEach((night, i) => {
-                    columns[i % columnCount].appendChild(renderNightCard(night));
+                    columns[i % columnCount].appendChild(renderNightCard(night, nights));
                   });
                 }
 
