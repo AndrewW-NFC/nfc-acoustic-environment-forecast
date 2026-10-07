@@ -1,249 +1,39 @@
 # NFC acoustic environment forecast
 
-Score hourly weather data for sound clarity and propagation—the acoustic environment for nocturnal flight call recording.
+Compare conditional atmospheric absorption coefficients and model-derived recording-interference inputs for tonight and the next two nights. The app does not rate recording quality, predict bird activity or audibility, assume bird altitude, or recommend a recording window.
 
-The tool can be opened, used, and bookmarked from the GitHub Pages version: https://andreww-nfc.github.io/nfc-acoustic-environment-forecast/
+## What appears
 
-This is a small, static browser tool for nocturnal flight call recordists who want to know whether a night is likely to produce clean audio, blurred spectrograms, wind noise, rain masking, weak high-frequency detail, or other acoustic issues that affect call detection and identification.
+- Conditional air-absorption coefficients at 2–10 kHz, expressed as dB/100 m at modeled near-surface conditions. These are not losses along actual bird-to-microphone paths.
+- Weather-model wind and gusts at 10 m, with missing data explicit.
+- Counts of returned hourly intervals containing precipitation (water equivalent, not precipitation phase or acoustic intensity).
+- User-selected foliage/insect context and optional nearby mapped roads/airports.
+- Expandable hourly details and TXT/JSON reports; historical CSV/JSON exports.
 
-It does **not** forecast bird activity or migration. Use BirdCast or other migration tools for that. This tool only estimates the recording environment.
+The main cards are concise. All outputs distinguish model estimates, conditional calculations and user settings. Nightly ranges show available-hour variation, not uncertainty bounds. No forecast is guaranteed accurate. See [acoustic-model.md](acoustic-model.md) for assumptions and schema details.
 
-## What it does
+## Use
 
-The tool evaluates weather and local site conditions that can affect nocturnal flight call audio quality.
+Open `index.html`, or run `python3 -m http.server 8000` and visit http://localhost:8000. No build or package installation is required. Internet access is needed for weather, twilight and map services.
 
-It can:
+Set coordinates/timezone (`auto` is supported), microphone height, and local foliage/insect settings. Microphone height defaults to 2 m and is saved as site information only; the app does not infer wind at that height. No caller height or distance is requested or assumed.
 
-* Score upcoming nights for acoustic recording quality.
-* Show recent observed conditions for comparison.
-* Identify the best hour or hours within a night.
-* Explain likely recording issues such as wind, precipitation, humidity, fog, foliage noise, or insect noise.
-* Provide ID cautions when acoustic conditions may blur call structure.
-* Export forecasts as TXT or JSON.
-* Export historical acoustic scores as CSV or JSON.
-* Include optional hourly rows in historical exports.
-* Show optional human-made noise context from major roads and runway corridors.
+Map selection, approximate IP-based startup location and optional device location are supported. The device-location button explicitly invokes the browser permission flow. Forecasts do not predict migration; see BirdCast for that separate purpose.
 
-The score is meant to help answer questions like:
+## Data and tests
 
-* Is tonight worth recording?
-* Which hours are likely to be cleanest?
-* Will weak or distant calls be hard to identify?
-* Are conditions likely to preserve high-frequency detail?
-* How did last night compare with tonight?
-* Which nights in a date range had the best acoustic environment?
+Weather: Open-Meteo forecast and historical model estimates. Night windows: sunrise-sunset.org astronomical twilight. Maps: Leaflet/OpenStreetMap. Optional roads/airports: OpenStreetMap Overpass and built-in airport fallback. No live traffic or flight activity is used.
 
-## What it does not do
+Run `node --test tests/*.test.cjs`.
 
-This tool does **not** predict:
+Version 3.2 removes the prior score/outlook, assumed source paths, best-hour and bending fields from exports. Coefficients are explicitly labeled `db_per_100m`. Historical exports are capped at 366 evening dates.
 
-* Bird movement.
-* Migration intensity.
-* Species composition.
-* Flight altitude.
-* Whether birds will call.
-* Whether a recorder will detect a given species.
+Completed-night precipitation retains the separate 18:00–06:00 local estimate shared with NFC Tools. Missing hours prevent a complete total. See [rainfall-contract.md](rainfall-contract.md).
 
-A high score means the acoustic environment is favorable for recording. It does not mean birds will be moving or vocalizing.
+## Future propagation research
 
-## How to use
+The previous experimental module and notes are preserved in [research/experimental-v3.1](research/experimental-v3.1/README.md), excluded from the active app. Future altitude-informed modeling requires additional geometry and validation against recordings.
 
-Open `index.html` in a browser.
+## Hosting and license
 
-Enter:
-
-1. **Latitude**
-2. **Longitude**
-3. **Timezone**
-
-The timezone field can use `auto` or an IANA timezone value such as:
-
-```text
-America/New_York
-```
-
-You can also click the map or drag the marker to set latitude and longitude. Map selection requires an internet connection.
-
-On page load, the tool makes a no-prompt IP geolocation request and uses the resulting city-level coordinates as the initial map location. Approximate coordinates are displayed with two decimal places and clearly labeled. If the lookup is unavailable, the built-in default remains in place. A location chosen or typed while the lookup is pending is never overwritten.
-
-For an exact recorder site, adjust the map or coordinates manually, or select **Use device location**. Device location is opt-in and only requests access after the button is selected. Browsers and devices may provide GPS, Wi-Fi, cellular, or approximate positioning, so successful results include the browser-reported accuracy. If location is unavailable, the current selection remains in place and optional non-sensitive request details identify the browser error category, secure-page status, and whether the page is embedded. Manual and device coordinates are displayed with five decimal places.
-
-Then set local noise conditions:
-
-* **Foliage**
-
-  * Minimal / open site
-  * Light / sparse trees
-  * Moderate / leafed-out trees nearby
-  * Heavy / dense trees near mic
-
-* **Insects**
-
-  * Low / not noticeable
-  * Moderate / audible insects
-  * Heavy / dense insect chorus
-
-Optionally enable **Check human-made noise context**. This adds road and aircraft context, but it is not included in the acoustic score.
-
-Click **Generate forecast**.
-
-## Running locally
-
-Because this is a static app, there is no build step and no package install.
-
-Clone the repo:
-
-```bash
-git clone https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast.git
-cd nfc-acoustic-environment-forecast
-```
-
-Then open `index.html` directly in a browser.
-
-For a local web server, run:
-
-```bash
-python3 -m http.server 8000
-```
-
-Then open:
-
-```text
-http://localhost:8000
-```
-
-A local server is useful when testing browser behavior that may be restricted for local files.
-
-## Outputs
-
-The forecast output includes summary cards for upcoming nights, plus acoustic guidance for each night.
-
-Depending on available data, output may include:
-
-* Overall acoustic score.
-* Score descriptor.
-* Expected recording quality.
-* Best hour.
-* Main acoustic concerns.
-* ID cautions.
-* Night conditions.
-* Factor-level score effects.
-* Downloadable TXT and JSON exports.
-
-The observed section gives recent acoustic context using past weather data.
-
-The historical export tool can produce nightly acoustic scoring across an evening-date range. Browser exports are capped at 366 nights per file.
-
-Historical exports can include:
-
-* One summary row per night.
-* Optional hourly rows.
-* CSV or JSON output.
-
-## Scoring model
-
-Each hour starts from a 5.0 baseline, meaning usable but acoustically compromised.
-
-Favorable conditions add points. Unfavorable conditions subtract points. The result is clamped between 0.0 and 10.0, then rounded to the nearest 0.5 for display.
-
-| Displayed score | Descriptor |
-| --------------: | ---------- |
-|        9.0–10.0 | Excellent  |
-|         8.0–8.5 | Very Good  |
-|         7.0–7.5 | Good       |
-|         6.0–6.5 | Fair       |
-|         5.0–5.5 | Marginal   |
-|         3.0–4.5 | Poor       |
-|         1.5–2.5 | Very Poor  |
-|         0.0–1.0 | Unusable   |
-
-### Scored factors
-
-| Factor        | Score effect range | Why it matters                                                                                                                                 |
-| ------------- | -----------------: | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Surface Wind  |       +1.4 to −1.4 | Wind noise, microphone rumble, and movement of nearby material can mask distant calls.                                                         |
-| Precipitation |       +1.0 to −1.0 | Rain and sleet add broadband masking.                                                                                                          |
-| Humidity      |     +0.55 to −0.55 | Very dry air can weaken high-frequency detail. Very humid air can coincide with haze, fog, condensation, or a higher noise floor.              |
-| Visibility    |     +0.45 to −0.45 | Haze and fog can indicate acoustic attenuation and reduced distance clarity.                                                                   |
-| Cloud Cover   |     +0.30 to −0.30 | Cloud conditions are used as a proxy for sound confinement and overnight stability.                                                            |
-| Pressure      |     +0.30 to −0.30 | Pressure near 1020–1029 hPa is treated as favorable. Low pressure or extremely high pressure can signal less favorable propagation conditions. |
-| Temperature   |     +0.25 to −0.25 | Seasonal temperature fit affects stability and phase-transition risk.                                                                          |
-| Foliage Noise |     +0.40 to −0.40 | Leafed-out vegetation near the recorder can add rustle and broadband masking.                                                                  |
-| Insect Noise  |     +0.35 to −0.35 | Insect bands and pulses can overlap nocturnal flight-call frequencies and mask spectrogram structure.                                          |
-
-## Data sources
-
-The app uses browser-side requests to public data sources.
-
-Weather data comes from Open-Meteo. Ten-meter wind is used directly, and near-ground wind is estimated from the same profile. Visibility uses API data when available; otherwise, it is estimated from precipitation and cloud cover.
-
-Night windows use astronomical twilight from sunrise-sunset.org.
-
-The historical export uses Open-Meteo historical weather data.
-
-Map selection uses Leaflet.
-
-Approximate startup location comes from the free Country API, using IP-derived city-level data. The service receives the visitor's IP address but states that it does not log requests. The startup lookup does not request access to device location.
-
-Human-made noise context is shown separately from the acoustic score. Road traffic context is estimated from nearby major OpenStreetMap roads. Aircraft context is estimated from nearby mapped or built-in major airports and runway alignment. The tool does not use live or scheduled flight data.
-
-## Customization
-
-The scoring model is configured inside `index.html`.
-
-The main configuration block is `SEASONAL_CONFIG`. It includes defaults tuned for fall and spring migration in temperate North America.
-
-You can adjust:
-
-* Seasonal temperature minimum.
-* Seasonal temperature maximum.
-* Ideal seasonal temperature center.
-* Expected average wind.
-* Expected average humidity.
-* Expected average cloud cover.
-* Foliage-related wind weighting.
-
-The current model version is shown in the app footer and stored in the `MODEL_VERSION` constant.
-
-## Limitations
-
-This is a practical field-planning tool, not a validated physical acoustics model.
-
-Important limitations:
-
-* It estimates the recording environment, not bird activity.
-* Local noise settings depend on the user’s knowledge of the site.
-* Human-made noise context is approximate.
-* Road noise depends on traffic volume, pavement, terrain, barriers, and time of night.
-* Aircraft noise depends on live flight activity, runway use, altitude, aircraft type, and routing.
-* Visibility may be estimated when API visibility data is unavailable.
-* Weather forecasts can change.
-* Microphone placement, gain, recorder settings, nearby vegetation, buildings, terrain, insects, and water all affect real recordings.
-
-Use the score as decision support, not as a guarantee.
-
-## Repository structure
-
-```text
-.
-├── index.html
-└── LICENSE
-```
-
-## Deployment
-
-This project can be hosted as a static site.
-
-For GitHub Pages, enable Pages for the repository and serve from the branch and folder that contain `index.html`.
-
-No build command is required.
-
-## License
-
-MIT License.
-
-See `LICENSE` for details.
-
-## Comparable overnight precipitation
-
-Completed nights now have a separate 18:00–06:00 local precipitation estimate using the same pinned Open-Meteo model as the companion project. Reports include coverage, source, retrieval time, and coordinates. Missing hours prevent a complete total; these are model estimates, not rain-gauge observations. See the [shared rainfall contract](rainfall-contract.md) for usage and export details.
+Static hosting, including GitHub Pages; no build command. MIT license, see [LICENSE](LICENSE).

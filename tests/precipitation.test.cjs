@@ -21,7 +21,7 @@ test('app script syntax and missing precipitation remain explicit', () => {
   const parse = new Function('windToMps', 'sanitizeGust', 'estimateGroundWind', 'estimateVisibility', 'parseLocalDateTime',
     script.slice(start, end) + '; return parseHourlyPayload;')(v => v, (_, g) => g, v => v, () => 10000, v => v);
   assert.equal(parse({hourly:{time:['2026-09-21T02:00'],precipitation:[null]}}, true)[0].precipitation, null);
-  assert.equal(parse({hourly:{time:['2026-09-21T02:00'],precipitation:[0]}}, true)[0].precipitation, 0);
+  assert.equal(parse({hourly_units:{precipitation:'mm'},hourly:{time:['2026-09-21T02:00'],precipitation:[0]}}, true)[0].precipitation, 0);
 });
 
 test('fetch pins the shared source; failure cannot become a dry night', async () => {
