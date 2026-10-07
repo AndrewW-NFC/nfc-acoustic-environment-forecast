@@ -1,39 +1,39 @@
 # NFC acoustic environment forecast
 
-Compare conditional atmospheric absorption coefficients and model-derived recording-interference inputs for tonight and the next two nights. The app does not rate recording quality, predict bird activity or audibility, assume bird altitude, or recommend a recording window.
+A simple evening-by-evening planning tool for bird-call recording: a score out of 10, a one-word descriptor and the main source of possible noise. The September 21 score-card presentation is restored, with a narrower scoring model and the later missing-data corrections retained.
 
-## What appears
+The score covers wind noise, precipitation noise, wind-driven leaf rustle and user-selected insect noise. Temperature, humidity, pressure, clouds, visibility and atmospheric absorption do not contribute. The index is a transparent planning heuristic, **not a validated prediction of recording clarity or detection probability**. It does not forecast migration or bird activity.
 
-- Conditional air-absorption coefficients at 2–10 kHz, expressed as dB/100 m at modeled near-surface conditions. These are not losses along actual bird-to-microphone paths.
-- Weather-model wind and gusts at 10 m, with missing data explicit.
-- Counts of returned hourly intervals containing precipitation (water equivalent, not precipitation phase or acoustic intensity).
-- User-selected foliage/insect context and optional nearby mapped roads/airports.
-- Expandable hourly details and TXT/JSON reports; historical CSV/JSON exports.
+## Scoring
 
-The main cards explain sound lost in the air, wind noise, and possible wet-weather noise in plain language. Calculations and hourly measurements sit inside Details. A night is described as having less or more near-ground absorption only when its complete hourly ranges separate from every other displayed night at every modeled frequency; this is not a recording-quality ranking. All outputs distinguish model estimates, conditional calculations and user settings. Nightly ranges show available-hour variation, not uncertainty bounds. No forecast is guaranteed accurate. See [acoustic-model.md](acoustic-model.md) for assumptions and schema details.
+Each hour starts at 10 and loses points for possible masking noise. Wind and precipitation can each dominate a recording, so either can subtract up to 7 points; foliage subtracts up to 1 and insects up to 3. Scores stop at zero. Nightly scores average unrounded hourly scores and round once to the nearest half point. Numerical thresholds are design choices requiring future validation against recordings.
+
+| Score | Label |
+| --- | --- |
+| 9–10 | Excellent |
+| 8–8.5 | Great |
+| 7–7.5 | Good |
+| 6–6.5 | Fair |
+| 5–5.5 | Marginal |
+| 3–4.5 | Poor |
+| 0–2.5 | Bad |
+
+Calm foliage gets no penalty. Gusts and sustained wind share a single wind deduction. Any missing required weather value, or an interior hourly gap, prevents a nightly rating. Settings apply to all displayed nights, including historical nights. Microphone height is saved as site information only, without estimating wind at that height.
+
+The main card shows the score, label, expectation and top acoustic issue. Night conditions, deductions and hourly inputs are expandable. TXT, JSON and historical CSV/JSON exports use the same scores. See [acoustic-model.md](acoustic-model.md) for exact scoring rules, evidence and limitations.
 
 ## Use
 
 Open `index.html`, or run `python3 -m http.server 8000` and visit http://localhost:8000. No build or package installation is required. Internet access is needed for weather, twilight and map services.
 
-Set coordinates/timezone (`auto` is supported), microphone height, and local foliage/insect settings. Microphone height defaults to 2 m and is saved as site information only; the app does not infer wind at that height. No caller height or distance is requested or assumed.
+Set your location, timezone and local foliage/insect conditions. Map selection, approximate IP-based startup location and optional device location are supported. The device-location button invokes the browser permission flow.
 
-Map selection, approximate IP-based startup location and optional device location are supported. The device-location button explicitly invokes the browser permission flow. Forecasts do not predict migration; see BirdCast for that separate purpose.
-
-## Data and tests
-
-Weather: Open-Meteo forecast and historical model estimates. Night windows: sunrise-sunset.org astronomical twilight. Maps: Leaflet/OpenStreetMap. Optional roads/airports: OpenStreetMap Overpass and built-in airport fallback. No live traffic or flight activity is used.
+Weather: Open-Meteo forecast and historical model estimates. Night windows: sunrise-sunset.org astronomical twilight. Maps: Leaflet/OpenStreetMap. Optional nearby roads/airports are context only, never scored. Completed-night precipitation retains the separate 18:00–06:00 local estimate shared with NFC Tools; missing hours prevent a complete total. See [rainfall-contract.md](rainfall-contract.md).
 
 Run `node --test tests/*.test.cjs`.
 
-Version 3.2 removes the prior score/outlook, assumed source paths, best-hour and bending fields from exports. Coefficients are explicitly labeled `db_per_100m`. Historical exports are capped at 366 evening dates.
+## Archived research
 
-Completed-night precipitation retains the separate 18:00–06:00 local estimate shared with NFC Tools. Missing hours prevent a complete total. See [rainfall-contract.md](rainfall-contract.md).
-
-## Future propagation research
-
-The previous experimental module and notes are preserved in [research/experimental-v3.1](research/experimental-v3.1/README.md), excluded from the active app. Future altitude-informed modeling requires additional geometry and validation against recordings.
-
-## Hosting and license
+The altitude/refraction model remains in [research/experimental-v3.1](research/experimental-v3.1/README.md). Conditional absorption calculations are preserved in [research/conditional-v3.2](research/conditional-v3.2/README.md). Neither is loaded by the active app. Future propagation modeling needs source geometry and validation against recordings.
 
 Static hosting, including GitHub Pages; no build command. MIT license, see [LICENSE](LICENSE).

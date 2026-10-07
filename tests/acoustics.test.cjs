@@ -1,6 +1,6 @@
 const test=require('node:test'), assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const a=require('../acoustics.js');
+const a=require('../research/conditional-v3.2/acoustics.js');
 const air={temp:20,humidity:70,pressure:1013.25};
 test('conditional absorption agrees with rounded reference coefficients',()=>{
   for(const [f,expected] of [[1000,5],[2000,9],[4000,22.9],[8000,76.6]])
@@ -33,22 +33,27 @@ function app(){
   new vm.Script(source);
   const script=source.slice(0,source.indexOf('els.runBtn.addEventListener')).replace(/^\s*(initLocationMap|initializeHistoricalExportDates|initializeApproximateLocation)\(\);/gm,'');
   const elements=new Map();
-  const context=vm.createContext({AcousticPropagation:a,URL,Date,console,
-    document:{getElementById(id){if(!elements.has(id))elements.set(id,{value:'2',selectedOptions:[{textContent:'Selected'}]});return elements.get(id)},createElement(){return {}}},
+  const context=vm.createContext({RecordingScore:require('../recording-score.js'),URL,Date,console,
+    document:{getElementById(id){if(!elements.has(id))elements.set(id,{value:id==='foliageWeight'?'1':id==='insectNoise'?'low':'2',selectedOptions:[{textContent:'Selected'}]});return elements.get(id)},createElement(){return {}}},
     localStorage:{getItem(){return null},setItem(){}},});
   vm.runInContext(script,context);return context;
 }
-test('UI, TXT, JSON and CSV expose coefficients without unvalidated predictions',()=>{
+test('UI, TXT, JSON and CSV share the restored score and omit unsupported metrics',()=>{
   const c=app();c.night={night_date:'2026-10-07',window_start:new Date('2026-10-07T20:00'),window_end:new Date('2026-10-07T20:00'),
-    all_forecasts:[{time:new Date('2026-10-07T20:00'),weather:{...air,wind_speed_10m:3,gust_speed_10m:7,precipitation:0}}]};
+    all_forecasts:[{time:new Date('2026-10-07T20:00'),weather:{wind_speed_10m:0,gust_speed_10m:0,precipitation:0}}]};
   const n=vm.runInContext('serializeNight(night,"Tonight","forecast")',c);
-  for(const k of ['outlook','scenario','lowest_absorption_hour_6khz','profile_coverage_hours'])assert.equal(n[k],undefined);
+  assert.equal(n.rating.score_10,10);assert.equal(n.rating.descriptor,'Excellent');assert.equal(n.absorption,undefined);
   const csv=vm.runInContext('rowsToCsv(exportRowsForNight(night,true))',c);
-  assert.match(csv,/absorption_6000_db_per_100m/);assert.doesNotMatch(csv,/caller_m|promising_hours|wind_at_microphone|outlook/);
+  assert.match(csv,/score_10/);assert.match(csv,/Excellent/);
+  assert.doesNotMatch(csv,/absorption|caller_m|best_hour|humidity|pressure/);
   const txt=vm.runInContext('generateReport(42,-71,"America/New_York","Test",[night],[])',c);
-  assert.match(txt,/dB\/100 m/);assert.doesNotMatch(txt,/Favorable|Most promising hours|caller scenario/);
+  assert.match(txt,/10.0\/10 — Excellent/);assert.doesNotMatch(txt,/dB|coefficient|sharp call|upper band/);
   const card=vm.runInContext('renderNightCard(serializeNight(night,"Tonight","forecast")).innerHTML',c);
-  assert.match(card,/coefficient, not the loss/);assert.doesNotMatch(card,/Mixed|Most promising|downward bending/);
+  assert.match(card,/class="score">10.0\/10/);assert.match(card,/Top acoustic issue/);
+  assert.doesNotMatch(card,/Best Hour|ID Cautions|coefficient/);
+  c.night.all_forecasts[0].weather.precipitation=null;
+  const missing=vm.runInContext('renderNightCard(serializeNight(night,"Tonight","forecast")).innerHTML',c);
+  assert.match(missing,/Unavailable/);assert.doesNotMatch(missing,/10.0\/10/);
 });
 test('weather parsing rejects unsupported units and preserves missing data',()=>{
   const c=app();c.payload={hourly_units:{temperature_2m:'°C',relative_humidity_2m:'%',surface_pressure:'hPa',wind_speed_10m:'km/h',wind_gusts_10m:'m/s',precipitation:'mm'},
@@ -56,20 +61,4 @@ test('weather parsing rejects unsupported units and preserves missing data',()=>
   let r=vm.runInContext('parseHourlyPayload(payload,false)[0]',c);assert.equal(r.wind_speed_10m,10);assert.equal(r.gust_speed_10m,null);assert.equal(r.precipitation,0);
   c.payload.hourly_units={};r=vm.runInContext('parseHourlyPayload(payload,false)[0]',c);
   assert.equal(r.temp,null);assert.equal(r.pressure,null);assert.equal(r.wind_speed_10m,null);assert.equal(r.precipitation,null);
-});
-test('plain recording notes compare only complete, separated absorption ranges',()=>{
-  const c=app();
-  const night=(min,max,available=2)=>({summary:{
-    absorption:[2000,4000,6000,8000,10000].map(hz=>({hz,min,max,available_hours:available,total_hours:2})),
-    wind_10m_ms:{min:0,max:3,available_hours:2,total_hours:2},
-    precipitation:{positive_intervals:0,available_intervals:2,total_intervals:2}}});
-  c.n=night(1,2);c.other=night(3,4);
-  const notes=()=>vm.runInContext('recordingNotes(n,[n,other])',c);
-  assert.match(notes()[0].text,/absorb less/);
-  c.other=night(1.5,4);assert.match(notes()[0].text,/do not single out/);
-  c.other=night(3,4,1);assert.doesNotMatch(notes()[0].text,/absorb less/);
-  c.n=night(1,2,1);assert.match(notes()[0].text,/missing/);
-  c.n.summary.precipitation.available_intervals=0;assert.match(notes()[2].text,/data are missing/);
-  c.n.summary.precipitation.available_intervals=1;assert.match(notes()[2].text,/Some hours are missing/);
-  c.n.summary.precipitation.positive_intervals=1;assert.match(notes()[2].text,/If it falls as rain/);
 });

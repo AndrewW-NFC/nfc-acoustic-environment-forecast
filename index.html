@@ -450,7 +450,7 @@
 <body>
   <header>
     <h1>NFC acoustic environment forecast</h1>
-    <p class="lede">What might get in the way of clear bird calls tonight and over the next two nights?</p>
+    <p class="lede">Plan for clear bird-call recordings with a nightly score and a simple explanation of possible noise.</p>
     <p class="lede">It does not forecast bird activity or migration. Such forecasts are available from <a href="https://birdcast.org/migration-tools/migration-forecast-maps/" target="_blank" rel="noopener noreferrer">BirdCast</a>.</p>
   </header>
 
@@ -533,7 +533,7 @@
 
     <section id="forecastSection" class="section-block" aria-live="polite" hidden>
       <h2>Your next three nights</h2>
-      <p class="muted">These notes explain possible obstacles to clear recordings. We cannot yet reliably rate how clear the calls will be.</p>
+      <p class="muted">Higher scores mean less expected interference from wind, precipitation, rustling leaves and insects. Ratings are planning estimates, not guarantees.</p>
       <div id="forecastSummary" class="grid summary"></div>
     </section>
 
@@ -576,25 +576,26 @@
 
     <section class="footer-note" aria-label="Notes">
       <h2>Notes</h2>
-      <details><summary>How the acoustic estimates work</summary>
-        <p>ISO 9613-1 equations calculate a conditional absorption coefficient using modeled near-surface temperature, relative humidity and pressure. Values in dB/100 m describe uniform air at those conditions, not an assumed bird-to-microphone path.</p>
-        <p>The model does not rate recording quality, predict call audibility, identify a best recording window or infer bird height. Wind is reported at 10 m; microphone height is saved as site information only.</p>
-        <p>Missing data remain unavailable. Ranges describe variation across returned hours, not uncertainty. Precipitation amounts apply to the preceding hour. Historical data are model estimates rather than on-site measurements.</p>
-        <p>Completed-night precipitation retains the separate 18:00–06:00 local water-equivalent estimate shared with NFC Tools. Missing hours prevent a complete total. Night windows use astronomical twilight from sunrise-sunset.org.</p>
-        <p>Optional roads and airports provide source context only. No traffic counts, live flight data or source sound levels are used.</p>
-        <p>Method: <a href="https://www.iso.org/standard/17426.html">ISO 9613-1</a>. The experimental altitude and refraction model is archived for future research.</p>
+      <details><summary>How the score works</summary>
+        <p>Start at 10 and subtract for wind noise, precipitation noise, wind-driven leaf rustle and the insect noise you select. Calm, dry conditions with little local noise can reach 10. Several noise sources together can reach 0. Each night averages the unrounded hourly scores and rounds once to the nearest half point.</p>
+        <p>9–10 Excellent · 8–8.5 Great · 7–7.5 Good · 6–6.5 Fair · 5–5.5 Marginal · 3–4.5 Poor · 0–2.5 Bad.</p>
+        <p>These noise sources can mask calls. Their point values are practical planning rules, not a validated measure of clarity, detection probability or microphone performance. Wind protection, shelter, bird distance and equipment also matter. A low score does not mean recording is useless.</p>
+        <p>Wind and gusts use the weather model’s 10 m height. Microphone height is site information only. Precipitation is water equivalent, not a measurement of rain noise; snow and rain can affect recordings differently. Missing wind, gust or precipitation data prevent a nightly rating. User-selected foliage and insect conditions apply to all displayed nights, including historical nights.</p>
+        <p>Temperature, humidity, visibility, clouds and pressure do not affect the score. No bird altitude, bending, sound loss in dB, best recording window or spectrogram detail is predicted. The experimental propagation model remains archived.</p>
+        <p>Completed-night precipitation retains the separate 18:00–06:00 local estimate shared with NFC Tools. Optional roads and airports are map context only and do not affect the score.</p>
+        <p>Background: <a href="https://answers.wildlifeacoustics.com/r/en-US/Song-Meter-SM5-User-Guide/Left-and-Right-Acoustic-High-Pass-Filter">Microphone wind noise</a>; <a href="https://arxiv.org/abs/1804.05502">Rain and insect interference in bird recordings</a>.</p>
       </details>
 
 
-      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version 3.2.0</p>
+      <p><a href="https://github.com/AndrewW-NFC/nfc-acoustic-environment-forecast/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a> · Version 4.0.0</p>
     </section>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="precipitation.js"></script>
-  <script src="acoustics.js"></script>
+  <script src="recording-score.js"></script>
   <script>
-    const MODEL_VERSION = "3.2.0";
+    const MODEL_VERSION = "4.0.0";
 
 
     let acousticSettings = {microphone_m: 2};
@@ -850,7 +851,7 @@
           async function fetchForecast(lat, lon, timezone, forecastDays) {
             return parseHourlyPayload(await requestOpenMeteoJson("https://api.open-meteo.com/v1/forecast", {
               latitude:lat, longitude:lon, timezone, forecast_days:Math.max(3,forecastDays),
-              hourly:"temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,surface_pressure",
+              hourly:"wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation",
               windspeed_unit:"ms", models:"best_match"
             }),false);
           }
@@ -868,7 +869,7 @@
               longitude: lon,
               start_date: dateIso(start),
               end_date: dateIso(end),
-              hourly: "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,surface_pressure",
+              hourly: "wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation",
               timezone,
               windspeed_unit: "ms",
             };
@@ -1025,12 +1026,13 @@
           }
           
           function serializeNight(night, label, type, localNoiseContext = null) {
-            const hourly = night.all_forecasts.map(row=>({timestamp:localIso(row.time),
-              absorption:AcousticPropagation.analyze(row.weather),precipitation_mm:row.weather.precipitation,
+            const settings={foliage:Number(els.foliageWeight.value),insects:els.insectNoise.value};
+            const hourly=night.all_forecasts.map(row=>({timestamp:localIso(row.time),
+              recording:RecordingScore.analyze(row.weather,settings),precipitation_mm:row.weather.precipitation,
               wind_10m_ms:row.weather.wind_speed_10m,gust_10m_ms:row.weather.gust_speed_10m}));
             return {type,label,night_date:night.night_date,window_start:localIso(night.window_start),window_end:localIso(night.window_end),
               hours_count:hourly.length,microphone_height_m:acousticSettings.microphone_m,
-              summary:AcousticPropagation.summarize(hourly),
+              rating:RecordingScore.summarize(hourly,night.is_contiguous!==false),
               precipitation_summary:night.precipitation_summary || null,
               local_settings:{foliage:els.foliageWeight?.selectedOptions?.[0]?.textContent || "User selected",insects:els.insectNoise?.selectedOptions?.[0]?.textContent || "User selected"},
               human_noise_context:localNoiseContext,hourly};
@@ -1038,7 +1040,7 @@
           function generateStructuredOutput(lat,lon,timezone,regionName,forecastNights,historicalNights,localNoiseResources=null) {
             return {model_version:MODEL_VERSION,generated_at:localIso(new Date()),
               location:{latitude:lat,longitude:lon,timezone,region_state_name:regionName},
-              acoustic_method:"ISO 9613-1 conditional absorption coefficient at modeled near-surface conditions; not a path loss or quality rating.",
+              acoustic_method:"Heuristic 0–10 recording-noise index; not a calibrated clarity or detection prediction.",
               assumptions:acousticAssumptions,microphone_height_m:acousticSettings.microphone_m,
               forecast_nights:forecastNights.map((n,i)=>serializeNight(n,n.forecast_label || forecastNightLabel(i+1),"forecast",localNoiseResources?buildNoiseContextForNight(localNoiseResources,n):null)),
               historical_nights:historicalNights.map((n,i)=>serializeNight(n,historicalNightLabel(i+1),"historical",localNoiseResources?buildNoiseContextForNight(localNoiseResources,n):null))};
@@ -1379,72 +1381,42 @@
                   ];
                 }
 
-                function recordingNotes(n, peers=[]) {
-                  const p=n.summary.precipitation;
-                  const wet = !p.available_intervals
-                    ? "Precipitation data are missing, so we cannot check this source of noise."
-                    : p.positive_intervals
-                      ? "Wet weather is forecast during this night. If it falls as rain, tapping and splashing near the microphone could cover faint calls."
-                      : "No precipitation is forecast in the available hours. Other noise could still cover calls.";
-                  const coverage=p.available_intervals && p.available_intervals<p.total_intervals
-                    ? " Some hours are missing." : "";
-                  const wind=n.summary.wind_10m_ms;
-                  const windText=wind.min==null
-                    ? "Wind data are missing. Wind at the microphone and rustling leaves could still cover calls."
-                    : `Forecast wind: ${rangeText(wind,"mph",2.236936)}. Wind and rustling leaves can cover faint calls; shelter and a windscreen can help.`;
-                  const others=peers.filter(other=>other!==n);
-                  const complete=night=>night.summary.absorption.every(f=>f.total_hours>0 && f.available_hours===f.total_hours);
-                  let airLabel="Sound lost in the air";
-                  let air="Air absorbs some of a call’s sound as it travels. Without knowing how far away the bird is, we cannot say how much will reach your microphone.";
-                  if(!n.summary.absorption.some(f=>f.available_hours)) air="Air-absorption estimates are unavailable because weather inputs are missing or outside the calculation’s supported range.";
-                  else if(!complete(n)) air="Some air-absorption estimates are missing. There is not enough coverage to compare this night with the others.";
-                  else if(others.length && others.every(complete)) {
-                    const lower=others.every(other=>n.summary.absorption.every((f,i)=>f.max<other.summary.absorption[i].min));
-                    const higher=others.every(other=>n.summary.absorption.every((f,i)=>f.min>other.summary.absorption[i].max));
-                    airLabel=lower ? "Less sound lost in the air" : higher ? "More sound lost in the air" : airLabel;
-                    air=lower
-                      ? "The air near the ground is expected to absorb less sound than on the other nights shown. This is one part of sound travel, not a promise of clearer calls."
-                      : higher
-                        ? "The air near the ground is expected to absorb more sound than on the other nights shown. This could weaken calls travelling through that air; the effect depends on their distance."
-                        : "These estimates do not single out a night when air would absorb consistently less sound. Bird distance also affects how faint calls become.";
-                  }
-                  return [{label:airLabel,text:air},{label:"Wind noise",text:windText},{label:"Rain or snow",text:wet+coverage}];
-                }
                 function generateReport(lat,lon,timezone,regionName,forecastNights,historicalNights,localNoiseResources=null) {
                   const data=generateStructuredOutput(lat,lon,timezone,regionName,forecastNights,historicalNights,localNoiseResources);
-                  return [`Bird-call recording — ${regionName} (${timezone})`,
-                    "Possible obstacles to clear recordings; not an overall recording-quality rating.",
-                    ...[data.forecast_nights,data.historical_nights].flatMap(group=>group.map(n=>[
-                      `\n${n.label}: ${n.window_start}–${n.window_end}`,
-                      ...recordingNotes(n,group).map(note=>`${note.label}: ${note.text}`),
-                      "\nDetails",
-                      ...n.summary.absorption.map(f=>`${f.hz/1000} kHz coefficient: ${rangeText(f,"dB/100 m")}`),
-                      `10 m wind: ${rangeText(n.summary.wind_10m_ms,"mph",2.236936)}; gusts: ${rangeText(n.summary.gust_10m_ms,"mph",2.236936)}`,
-                      precipitationText(n.summary.precipitation),
-                      `Site microphone height: ${n.microphone_height_m} m (metadata only)`,
-                      `Selected foliage: ${n.local_settings.foliage}; insects: ${n.local_settings.insects}`,
+                  return [`NFC recording forecast — ${regionName} (${timezone})`,
+                    "Planning estimates for noise interference, not guaranteed recording quality.",
+                    ...[...data.forecast_nights,...data.historical_nights].map(n=>[
+                      `\n${n.label}: ${n.rating.score_10==null?'—':n.rating.score_10.toFixed(1)+'/10'} — ${n.rating.descriptor}`,
+                      `${n.window_start}–${n.window_end}`,
+                      n.rating.expectation,`Top acoustic issue: ${n.rating.top_issue}`,n.rating.explanation,
+                      `Rated hours: ${n.rating.available_hours}/${n.rating.total_hours}`,
+                      ...Object.entries(n.rating.deductions||{}).map(([k,v])=>`${k}: average deduction ${v.toFixed(2)}`),
+                      `Foliage: ${n.local_settings.foliage}; insects: ${n.local_settings.insects}`,
                       ...(n.precipitation_summary?[OvernightPrecipitation.summaryText(n.precipitation_summary)]:[]),
                       ...(n.human_noise_context?[localNoiseContextSummary(n.human_noise_context)]:[]),
                       ...n.hourly.map(h=>`${h.timestamp}: ${hourText(h)}`)
-                    ].join("\n"))),"\nHow to read the calculations",...acousticAssumptions].join("\n");
+                    ].join("\n")),"\nAbout the score",...acousticAssumptions].join("\n");
                 }
-                function renderNightCard(n, peers=[]) {
-                  const card=document.createElement("article");card.className="card night-card";
-                  card.innerHTML=`<h3>${escapeHtml(n.label)}</h3>
-                    ${recordingNotes(n,peers).map(note=>`<p><strong>${escapeHtml(note.label)}</strong><br>${escapeHtml(note.text)}</p>`).join("")}
-                    <details><summary>Details</summary>
-                    <p class="muted">Air absorption is a coefficient, not the loss of an actual bird call. Wind measurements below refer to 10 m above ground, not your microphone.</p>
-                    <details><summary>Through the night</summary>
-                      <p class="muted">${escapeHtml(n.window_start.replace("T"," "))}–${escapeHtml(n.window_end.replace("T"," "))}: returned hourly timestamps. Precipitation refers to the hour ending at each timestamp; wind and absorption inputs refer to that timestamp.</p>
-                      ${n.hourly.map(h=>`<p><strong>${escapeHtml(h.timestamp.slice(11,16))}</strong> ${escapeHtml(hourText(h))}</p>`).join("")}</details>
-                    <details><summary>Absorption and site details</summary>
-                      <table><thead><tr><th>Frequency</th><th>Conditional coefficient</th></tr></thead><tbody>${n.summary.absorption.map(f=>`<tr><th>${f.hz/1000} kHz</th><td>${escapeHtml(rangeText(f,"dB/100 m"))}</td></tr>`).join("")}</tbody></table>
+                function renderNightCard(n) {
+                  const r=n.rating;
+                  const qualityClass=r.score_10==null?'':r.score_10>=9?'quality-excellent':r.score_10>=8?'quality-very-good':r.score_10>=7?'quality-good':r.score_10>=6?'quality-fair':r.score_10>=3?'quality-poor':'quality-very-poor';
+                  const card=document.createElement("article");
+                  card.className=`card night-card${n.type==='historical'?' observed-card':''}`;
+                  card.innerHTML=`<div class="badge-row"><span class="badge ${qualityClass}">${escapeHtml(r.descriptor)}</span></div>
+                    <h3>${escapeHtml(n.label)}</h3>
+                    <div class="score">${r.score_10==null?'—':r.score_10.toFixed(1)+'/10'}</div>
+                    <p>${escapeHtml(r.expectation)}</p>
+                    <table><tbody><tr><th>Top acoustic issue</th><td>${escapeHtml(r.top_issue)}<br>${escapeHtml(r.explanation)}</td></tr></tbody></table>
+                    <details class="night-conditions-details"><summary>Night conditions</summary>
+                      <p>${escapeHtml(n.window_start.replace('T',' '))}–${escapeHtml(n.window_end.replace('T',' '))} (local time)</p>
+                      <p>${r.available_hours}/${r.total_hours} returned hours have the data needed to score.</p>
+                      ${r.deductions?`<table><thead><tr><th>Noise source</th><th>Average deduction</th></tr></thead><tbody>${Object.entries(r.deductions).map(([k,v])=>`<tr><th>${escapeHtml(k)}</th><td>−${v.toFixed(2)}</td></tr>`).join('')}</tbody></table><p class="muted">Each hour starts at 10 and cannot fall below 0. The night averages those hourly scores, then rounds to the nearest half point.</p>`:''}
+                      <p>Foliage: ${escapeHtml(n.local_settings.foliage)}. Insects: ${escapeHtml(n.local_settings.insects)}. These are your settings for all nights shown.</p>
                       <p>Microphone height: ${n.microphone_height_m} m (site information only).</p>
-                      <p>Foliage: ${escapeHtml(n.local_settings.foliage)}. Insects: ${escapeHtml(n.local_settings.insects)}. These are user settings, not measured noise levels.</p>
-                      <p>Wind can cause microphone noise and leaf rustle. Precipitation impacts and insect sounds can mask calls. Noise levels are not predicted.</p>
-                      ${n.human_noise_context?`<p>${escapeHtml(localNoiseContextSummary(n.human_noise_context))}</p>`:""}
-                      ${n.precipitation_summary?`<p>${escapeHtml(OvernightPrecipitation.summaryText(n.precipitation_summary))}</p>`:""}
-                      ${acousticAssumptions.map(t=>`<p>${escapeHtml(t)}</p>`).join("")}</details></details>`;
+                      ${n.precipitation_summary?`<p>${escapeHtml(OvernightPrecipitation.summaryText(n.precipitation_summary))}</p>`:''}
+                      ${n.human_noise_context?`<p>${escapeHtml(localNoiseContextSummary(n.human_noise_context))}</p>`:''}
+                      <details><summary>Hourly estimates</summary>${n.hourly.map(h=>`<p><strong>${escapeHtml(h.timestamp.slice(11,16))}</strong> ${escapeHtml(hourText(h))}</p>`).join('')}</details>
+                    </details>`;
                   return card;
                 }
 
@@ -1503,7 +1475,7 @@
                     longitude: lon,
                     start_date: startDateIso,
                     end_date: endDateIso,
-                    hourly: "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,surface_pressure",
+                    hourly: "wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation",
                     timezone,
                     windspeed_unit: "ms",
                   };
@@ -1529,17 +1501,15 @@
                 function exportRowsForNight(night,includeHourlyRows) {
                   const n=serializeNight(night,night.night_date,"historical");
                   const base={model_version:MODEL_VERSION,microphone_height_m:n.microphone_height_m,
-                    absorption_basis:"Conditional coefficient at modeled near-surface air; not call path loss",absorption_unit:"dB/100m"};
+                    scoring_method:"Heuristic noise-interference index, not calibrated recording quality",
+                    foliage_setting:n.local_settings.foliage,insect_setting:n.local_settings.insects};
+                  const deductions=r=>Object.fromEntries(Object.entries(r.deductions||{}).map(([k,v])=>[k.toLowerCase().replaceAll(' ','_')+'_deduction',v]));
                   const rows=[{...base,row_type:"night_summary",night_date:n.night_date,hours_count:n.hours_count,
-                    window_start:n.window_start,window_end:n.window_end,
-                    ...Object.fromEntries(n.summary.absorption.flatMap(f=>[[`absorption_${f.hz}_min_db_per_100m`,f.min],[`absorption_${f.hz}_max_db_per_100m`,f.max],[`absorption_${f.hz}_available_hours`,f.available_hours]])),
-                    wind_10m_min_ms:n.summary.wind_10m_ms.min,wind_10m_max_ms:n.summary.wind_10m_ms.max,wind_available_hours:n.summary.wind_10m_ms.available_hours,
-                    gust_10m_min_ms:n.summary.gust_10m_ms.min,gust_10m_max_ms:n.summary.gust_10m_ms.max,gust_available_hours:n.summary.gust_10m_ms.available_hours,
-                    ...n.summary.precipitation,foliage_setting:n.local_settings.foliage,insect_setting:n.local_settings.insects,
+                    window_start:n.window_start,window_end:n.window_end,score_10:n.rating.score_10,descriptor:n.rating.descriptor,
+                    available_hours:n.rating.available_hours,top_issue:n.rating.top_issue,...deductions(n.rating),
                     ...Object.fromEntries(Object.entries(n.precipitation_summary||{}).filter(([k])=>k!=="intervals").map(([k,v])=>[`overnight_${k}`,v]))}];
                   if(includeHourlyRows) for(const h of n.hourly) rows.push({...base,row_type:"hourly",night_date:n.night_date,timestamp:h.timestamp,
-                    absorption_status:h.absorption.status,...h.absorption.air_inputs,
-                    ...Object.fromEntries(h.absorption.coefficients.map(f=>[`absorption_${f.hz}_db_per_100m`,f.db_per_100m])),
+                    score_10:h.recording.score_10,descriptor:h.recording.descriptor,...deductions(h.recording),
                     wind_10m_ms:h.wind_10m_ms,gust_10m_ms:h.gust_10m_ms,precipitation_mm:h.precipitation_mm,precipitation_interval:"preceding hour"});
                   if(includeHourlyRows) for(const interval of n.precipitation_summary?.intervals||[]) rows.push({row_type:"overnight_precipitation_hour",night_date:n.night_date,...interval,source:n.precipitation_summary.source,model:n.precipitation_summary.model});
                   return rows;
@@ -1897,31 +1867,23 @@
                 initializeHistoricalExportDates();
 
                 const acousticAssumptions = [
-                  "Absorption coefficients use ISO 9613-1 equations with modeled 2 m temperature and humidity and surface pressure. Values are expressed in dB per 100 m of uniform air at those conditions, not loss along an actual call path.",
-                  "Nightly ranges are minima and maxima among available hourly values, not uncertainty bounds. Missing or out-of-envelope inputs yield no coefficient. Operating envelope: -20 to 50 C, 10–100% RH, 500–1100 hPa.",
-                  "No bird height, travel distance, bending, detection range, spectrogram detail, overall recording quality, or best recording window is predicted. Forecast data and the conditional calculations are not guarantees.",
-                  "Wind is reported at the weather model's 10 m reference height. Microphone height is saved as site information only. No wind profile or local sound level is inferred.",
-                  "Precipitation is model water equivalent for the preceding hour, not identified rain phase or measured noise. Foliage and insect settings are user supplied. Historical data are model estimates, not observations at the microphone."
+                  "The 0–10 score is a heuristic noise-interference index, not a validated prediction of clarity or detection. Wind, precipitation, wind-driven foliage and user-selected insects are its only factors.",
+                  "Each hour starts at 10. Maximum deductions: wind 7, precipitation 7, leaf rustle 1, insects 3. Hourly scores are floored at zero. Night scores average unrounded hourly scores and round once to the nearest half point. More than one source can mask a call, so maximum deductions exceed 10.",
+                  "Wind is modeled at 10 m, not microphone height. Missing wind, gusts or precipitation, or gaps between returned hourly timestamps, prevent a nightly rating. Settings apply to every displayed night, including historical nights.",
+                  "Precipitation is preceding-hour water equivalent, not measured sound or identified rain phase. Rain and snow can create different noise. Local shelter, windscreens, microphone response and bird distance are not modeled.",
+                  "No atmospheric propagation, flight height, best recording window or spectrogram-detail predictions are made. Historical weather is modeled, not observed at the microphone."
                 ];
-                function rangeText(r,unit,multiplier=1) {
-                  if(r.min==null) return `Unavailable (0/${r.total_hours} hours)`;
-                  const value=`${(r.min*multiplier).toFixed(1)}–${(r.max*multiplier).toFixed(1)} ${unit}`;
-                  return r.available_hours===r.total_hours?value:`${value} (partial: ${r.available_hours}/${r.total_hours} hours)`;
-                }
-                function precipitationText(p) {
-                  if(!p.available_intervals) return `Unavailable (0/${p.total_intervals} hourly intervals)`;
-                  return `${p.positive_intervals} of ${p.available_intervals} available hourly intervals contain precipitation` +
-                    (p.available_intervals<p.total_intervals?`; ${p.total_intervals-p.available_intervals} intervals unavailable.`:".");
-                }
                 function hourText(h) {
-                  const coefficient=h.absorption.coefficients.find(f=>f.hz===6000).db_per_100m;
                   const speed=v=>v==null?"unavailable":`${(v*2.236936).toFixed(1)} mph`;
-                  return `6 kHz coefficient: ${coefficient==null?"unavailable":coefficient.toFixed(1)+" dB/100 m"}. 10 m wind: ${speed(h.wind_10m_ms)}; gusts: ${speed(h.gust_10m_ms)}. Preceding-hour precipitation: ${h.precipitation_mm==null?"unavailable":h.precipitation_mm.toFixed(2)+" mm"}.`;
+                  return `${h.recording.score_10==null?'Unavailable':h.recording.score_10.toFixed(1)+'/10 — '+h.recording.descriptor}. Wind at 10 m: ${speed(h.wind_10m_ms)}; gusts: ${speed(h.gust_10m_ms)}. Preceding-hour precipitation: ${h.precipitation_mm==null?'unavailable':h.precipitation_mm.toFixed(2)+' mm'}.`;
+                }
+                function validSiteSettings(settings) {
+                  return settings && Number.isFinite(settings.microphone_m) && settings.microphone_m>=0.5 && settings.microphone_m<=30;
                 }
 
                 function readAcousticSettings() {
                   const settings = {microphone_m:Number(els.microphoneHeight.value)};
-                  if (!els.microphoneHeight.value.trim() || !AcousticPropagation.validateSettings(settings)) {
+                  if (!els.microphoneHeight.value.trim() || !validSiteSettings(settings)) {
                     setStatus("Enter microphone height between 0.5 and 30 m."); return false;
                   }
                   acousticSettings = settings;
@@ -1930,7 +1892,7 @@
                 }
                 try {
                   const saved = JSON.parse(localStorage.getItem("nfc-acoustic-settings-v3"));
-                  if (saved && AcousticPropagation.validateSettings(saved)) {
+                  if (saved && validSiteSettings(saved)) {
                     els.microphoneHeight.value = saved.microphone_m;
                   }
                 } catch (_) {}
